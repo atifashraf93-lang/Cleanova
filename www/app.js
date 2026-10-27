@@ -3,8 +3,11 @@
   'use strict';
 
   var Cap = window.Capacitor;
-  var P = (Cap && Cap.registerPlugin && !window.CLEANOVA_MOCK) ? Cap.registerPlugin('Cleanova') : window.CleanovaMock;
-  var AppPlugin = Cap && Cap.registerPlugin ? Cap.registerPlugin('App') : null;
+  var P;
+  try { P = (Cap && Cap.registerPlugin && !window.CLEANOVA_MOCK) ? Cap.registerPlugin('Cleanova') : window.CleanovaMock; } catch (e) { if (window.cleanovaDiag) window.cleanovaDiag('registerPlugin failed: ' + e.message); }
+  if (!P) P = new Proxy({}, { get: function () { return function () { return Promise.reject(new Error('plugin missing')); }; } });
+  var AppPlugin = null;
+  try { AppPlugin = Cap && Cap.registerPlugin ? Cap.registerPlugin('App') : null; } catch (e) { AppPlugin = null; }
 
   function $(s) { return document.querySelector(s); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -119,7 +122,7 @@
     var b = S.back.pop() || { view: 'home' };
     S.view = b.view; S.review = b.review; render(); return true;
   }
-  if (AppPlugin && AppPlugin.addListener) AppPlugin.addListener('backButton', function () { if (!goBack()) AppPlugin.exitApp(); });
+  try { if (AppPlugin && AppPlugin.addListener) AppPlugin.addListener('backButton', function () { if (!goBack()) AppPlugin.exitApp(); }); } catch (e) { /* back button stays default */ }
 
   /* ---------- screens ---------- */
   function setTop(titleHtml, act) { $('#title').innerHTML = titleHtml; $('#topact').innerHTML = act || ''; }
@@ -307,11 +310,19 @@
   }
 
   /* ---------- start ---------- */
+  function withTimeout(promise, ms) {
+    return new Promise(function (res, rej) {
+      var t = setTimeout(function () { rej(new Error('timeout: native plugin did not answer in ' + ms / 1000 + 's')); }, ms);
+      promise.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); });
+    });
+  }
   function refreshStatus(quiet) {
-    return P.status().then(function (r) {
+    var call;
+    try { call = withTimeout(P.status(), 5000); } catch (e) { call = Promise.reject(e); }
+    return call.then(function (r) {
       S.granted = !!r.granted; S.free = r.free || 0; S.total = r.total || 0;
       if (!quiet) { if (!S.granted) { S.view = 'gate'; } else if (S.view === 'gate') S.view = 'home'; render(); }
-    }).catch(function () { S.view = 'gate'; render(); });
+    }).catch(function (e) { S.view = 'gate'; render(); if (window.cleanovaDiag) window.cleanovaDiag('status failed: ' + (e && (e.message || e)) + '\nCapacitor: ' + typeof window.Capacitor + ', native: ' + (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) + ', plugin: ' + typeof P); });
   }
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && (S.view === 'gate')) refreshStatus(); });
   window.cleanovaTest = { S: S, render: render, prepare: prepare, go: go };
