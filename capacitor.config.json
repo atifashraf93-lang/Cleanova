@@ -1,0 +1,9 @@
+{
+  "appId": "pk.smaa.cleanova",
+  "appName": "Cleanova",
+  "webDir": "www",
+  "backgroundColor": "#0b1220",
+  "android": {
+    "allowMixedContent": false
+  }
+}
