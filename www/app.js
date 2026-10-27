@@ -1,4 +1,4 @@
-/* Cleanova: duplicate photo and file cleaner. Developed by SMAA. Everything runs on the phone. */
+/* Cleanova: duplicate and junk cleaner. Developed by SMAA. Everything runs on the phone. */
 (function () {
   'use strict';
 
@@ -10,18 +10,46 @@
     P = new Proxy({}, { get: function () { return function () { return Promise.reject(new Error('plugin missing')); }; } });
   }
   var AppPlugin = (!window.CLEANOVA_MOCK && PL.App) ? PL.App : null;
+  var LN = (!window.CLEANOVA_MOCK && PL.LocalNotifications) ? PL.LocalNotifications : null;
 
   function $(s) { return document.querySelector(s); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function T(ur, en) { return ur + '<small class="e">' + en + '</small>'; }
+  function store(k, v) { try { if (v === undefined) { var x = localStorage.getItem('cleanova.' + k); return x === null ? null : JSON.parse(x); } localStorage.setItem('cleanova.' + k, JSON.stringify(v)); } catch (e) { /* ignore */ } return null; }
+
+  /* ---------- preferences and language ---------- */
+  var PREF = {
+    lang: store('lang') || 'both',            /* en | ur | both (Urdu with English caption) */
+    theme: store('theme') || 'dark',
+    similar: store('similar') !== false,
+    quality: store('quality') !== false,
+    keep: store('keep') || 'camera',
+    protect: store('protect') || [],
+    remind: !!store('remind'),
+    trashDays: store('trashDays') || 30
+  };
+  function T(ur, en) {
+    if (PREF.lang === 'en') return en;
+    if (PREF.lang === 'ur') return ur;
+    return ur + '<small class="e">' + en + '</small>';
+  }
+  function tt(ur, en) { return PREF.lang === 'en' ? en : ur; }       /* plain text (no markup) */
+  function applyLook() {
+    var h = document.documentElement;
+    h.setAttribute('data-theme', PREF.theme);
+    h.setAttribute('dir', PREF.lang === 'en' ? 'ltr' : 'rtl');
+    h.setAttribute('lang', PREF.lang === 'en' ? 'en' : 'ur');
+    document.body.className = PREF.lang === 'en' ? 'en' : '';
+    var m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', PREF.theme === 'light' ? '#eef3f8' : '#080e1a');
+  }
+  function setPref(k, v) { PREF[k] = v; store(k, v); }
+  var toastT = 0;
+  function toast(ur, en) { var t = $('#toast'); t.innerHTML = T(ur, en); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { t.hidden = true; }, 3200); }
   function fmt(b) {
     if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
     if (b >= 1048576) return (b / 1048576).toFixed(b >= 10485760 ? 0 : 1) + ' MB';
     return Math.max(1, Math.round(b / 1024)) + ' KB';
   }
-  function store(k, v) { try { if (v === undefined) { var x = localStorage.getItem('cleanova.' + k); return x === null ? null : JSON.parse(x); } localStorage.setItem('cleanova.' + k, JSON.stringify(v)); } catch (e) { /* ignore */ } return null; }
-  var toastT = 0;
-  function toast(ur, en) { var t = $('#toast'); t.innerHTML = T(ur, en); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { t.hidden = true; }, 3000); }
+  function nfiles(n) { return T(n + ' فائلیں', n + (n === 1 ? ' file' : ' files')); }
 
   /* ---------- file helpers ---------- */
   var EXT = {
@@ -47,6 +75,9 @@
   }
   function best(items, bySize) {
     var l = items.slice().sort(function (a, b) {
+      if (PREF.keep === 'oldest' && a.mtime !== b.mtime) return a.mtime - b.mtime;
+      if (PREF.keep === 'newest' && a.mtime !== b.mtime) return b.mtime - a.mtime;
+      if (PREF.keep === 'largest' && a.size !== b.size) return b.size - a.size;
       var d = score(b) - score(a); if (d) return d;
       if (bySize && b.size !== a.size) return b.size - a.size;
       return a.mtime - b.mtime;
@@ -55,10 +86,14 @@
   }
 
   /* ---------- state ---------- */
-  var S = { view: 'home', granted: false, free: 0, total: 0, similar: store('similar') !== false, groups: [], cats: {}, sel: {}, review: null, trash: { items: [], bytes: 0 }, trashSel: {}, prog: null, back: [] };
+  var S = {
+    view: 'home', granted: false, free: 0, total: 0, scanned: false, groups: [], x: { large: [], wa: [], shots: [], junk: [], old: [], blurry: [] }, dirSet: {},
+    sel: {}, review: null, list: null, limit: 150, trash: { items: [], bytes: 0 }, trashSel: {}, prog: null, back: [],
+    f: { shots: 0, old: 30, blurry: 'all', junk: 'all', waAge: 90, waDir: 'all' }, last: store('last') || null
+  };
   var CATS = [
     { id: 'eimg', ur: 'ہو بہو ایک جیسی تصاویر', en: 'Exact photo copies', ic: '🖼' },
-    { id: 'simg', ur: 'ملتی جلتی تصاویر', en: 'Similar photos (review each)', ic: '📷' },
+    { id: 'simg', ur: 'ملتی جلتی تصاویر (خود دیکھ کر چنیں)', en: 'Similar photos (review each)', ic: '📷' },
     { id: 'evid', ur: 'ویڈیوز', en: 'Videos', ic: '🎬' },
     { id: 'eaud', ur: 'آڈیو', en: 'Audio', ic: '🎵' },
     { id: 'edoc', ur: 'دستاویزات / PDF', en: 'Documents', ic: '📄' },
@@ -69,8 +104,9 @@
     if (g.type === 'similar') return 'simg';
     return { img: 'eimg', vid: 'evid', aud: 'eaud', doc: 'edoc', other: 'eoth' }[k];
   }
+  function catLabel(c) { return T(c.ur, c.en); }
 
-  function prepare(groups) {
+  function prepare(groups, extras) {
     S.groups = groups.map(function (g, i) {
       var keeper = best(g.items, g.type === 'similar');
       return { id: i, type: g.type, size: g.size, items: g.items, keeper: keeper.path, cat: catOf(g) };
@@ -79,6 +115,10 @@
     S.groups.forEach(function (g) {
       if (g.type === 'exact') g.items.forEach(function (it) { if (it.path !== g.keeper) S.sel[it.path] = it.size; });
     });
+    var x = extras || {};
+    S.x = { large: x.large || [], wa: x.wa || [], shots: x.shots || [], junk: (x.junk || []).slice(), old: x.old || [], blurry: x.blurry || [] };
+    S.dirSet = {};
+    (x.empty || []).forEach(function (d) { S.dirSet[d] = 1; S.x.junk.push({ path: d, size: 0, mtime: 0, dir: true }); });
   }
   function catStats(id) {
     var n = 0, files = 0, bytes = 0, sel = 0, selBytes = 0;
@@ -90,6 +130,58 @@
     return { groups: n, files: files, bytes: bytes, sel: sel, selBytes: selBytes };
   }
   function selTotals() { var n = 0, b = 0; for (var p in S.sel) { n++; b += S.sel[p]; } return { n: n, b: b }; }
+  function sumItems(l) { var b = 0; l.forEach(function (i) { b += i.size; }); return b; }
+  function dupBytes() { var b = 0; S.groups.forEach(function (g) { g.items.forEach(function (it) { if (it.path !== g.keeper) b += it.size; }); }); return b; }
+  /* easy wins: duplicate extras + junk + blurry + old screenshots, each file counted once */
+  function potential() {
+    var seen = {}, b = 0;
+    function add(p, s) { if (!seen[p]) { seen[p] = 1; b += s; } }
+    S.groups.forEach(function (g) { if (g.type === 'exact') g.items.forEach(function (it) { if (it.path !== g.keeper) add(it.path, it.size); }); });
+    S.x.junk.forEach(function (i) { add(i.path, i.size); });
+    S.x.blurry.forEach(function (i) { add(i.path, i.size); });
+    S.x.shots.forEach(function (i) { if (Date.now() - i.mtime > 30 * 864e5) add(i.path, i.size); });
+    return b;
+  }
+  function savePotential() { S.last = { b: potential(), t: Date.now() }; store('last', S.last); }
+
+  /* ---------- extra lists ---------- */
+  var DAY = 864e5;
+  function older(it, days) { return !days || (Date.now() - it.mtime) > days * DAY; }
+  function waType(it) {
+    var p = it.path.toLowerCase();
+    if (p.indexOf('voice notes') >= 0) return 'voice';
+    return kind(it.path);
+  }
+  var WA_TYPES = [
+    { id: 'img', ur: 'تصاویر', en: 'Images', ic: '🖼' }, { id: 'vid', ur: 'ویڈیوز', en: 'Videos', ic: '🎬' },
+    { id: 'voice', ur: 'وائس نوٹس', en: 'Voice notes', ic: '🎙' }, { id: 'aud', ur: 'آڈیو', en: 'Audio', ic: '🎵' },
+    { id: 'doc', ur: 'دستاویزات', en: 'Documents', ic: '📄' }, { id: 'other', ur: 'باقی', en: 'Other', ic: '📦' }
+  ];
+  function waFiltered() {
+    return S.x.wa.filter(function (it) {
+      if (!older(it, S.f.waAge)) return false;
+      var sent = it.path.indexOf('/Sent/') >= 0;
+      if (S.f.waDir === 'sent' && !sent) return false;
+      if (S.f.waDir === 'recv' && sent) return false;
+      return true;
+    });
+  }
+  var AGE_OPTS = function (key) { return { key: key, opts: [[30, '1 ماہ سے پرانی', 'Over 1 month'], [90, '3 ماہ سے پرانی', 'Over 3 months'], [180, '6 ماہ سے پرانی', 'Over 6 months']] }; };
+  function listDef(id) {
+    var d;
+    if (id === 'large') d = { ur: 'بڑی فائلیں', en: 'Large files', hint: ['50 MB سے بڑی فائلیں، سب سے بڑی پہلے۔ خود دیکھ کر چنیں۔', 'Files over 50 MB, biggest first. Pick what you do not need.'], items: S.x.large.slice(), chips: [] };
+    else if (id === 'shots') d = { ur: 'اسکرین شاٹس', en: 'Screenshots', hint: ['پرانے اسکرین شاٹس جو شاید اب کام کے نہیں۔', 'Old screenshots you probably do not need.'], items: S.x.shots.filter(function (i) { return older(i, S.f.shots); }), chips: [{ key: 'shots', opts: [[0, 'سب', 'All'], [30, '1 ماہ سے پرانے', 'Over 1 month'], [90, '3 ماہ سے پرانے', 'Over 3 months']] }] };
+    else if (id === 'blurry') d = { ur: 'دھندلی اور تاریک تصاویر', en: 'Blurry and dark photos', hint: ['سافٹ ویئر کا اندازہ ہے، غلط بھی ہو سکتا ہے۔ ہر تصویر خود دیکھ کر چنیں۔', 'This is an automatic guess and can be wrong. Check each photo.'], items: S.x.blurry.filter(function (i) { return S.f.blurry === 'all' || i.reason === S.f.blurry; }), chips: [{ key: 'blurry', opts: [['all', 'سب', 'All'], ['blur', 'دھندلی', 'Blurry'], ['dark', 'تاریک', 'Dark']] }] };
+    else if (id === 'junk') d = { ur: 'فالتو فائلیں', en: 'Junk files', hint: ['پرانی انسٹالر APK، عارضی فائلیں اور خالی فولڈر۔', 'Old installer APKs, temporary files and empty folders.'], items: S.x.junk.filter(function (i) { var e = ext(i.path), f = S.f.junk; return f === 'all' || (f === 'apk' && e === 'apk' && !i.dir) || (f === 'dir' && i.dir) || (f === 'tmp' && e !== 'apk' && !i.dir); }), chips: [{ key: 'junk', opts: [['all', 'سب', 'All'], ['apk', 'APK', 'APK'], ['tmp', 'عارضی', 'Temp'], ['dir', 'خالی فولڈر', 'Empty folders']] }] };
+    else if (id === 'old') d = { ur: 'پرانی ڈاؤن لوڈز', en: 'Old downloads', hint: ['Download فولڈر کی پرانی فائلیں۔', 'Old files in your Download folder.'], items: S.x.old.filter(function (i) { return older(i, S.f.old); }), chips: [AGE_OPTS('old')] };
+    else if (id.indexOf('wa:') === 0) {
+      var t = id.slice(3), wt = WA_TYPES.filter(function (x) { return x.id === t; })[0];
+      d = { ur: 'واٹس ایپ · ' + wt.ur, en: 'WhatsApp · ' + wt.en, hint: ['واٹس ایپ کا پرانا میڈیا۔ ہٹانے سے چیٹ کا متن نہیں جاتا۔', 'Old WhatsApp media. Chat text is not touched.'], items: waFiltered().filter(function (i) { return waType(i) === t; }), chips: [AGE_OPTS('waAge'), { key: 'waDir', opts: [['all', 'سب', 'All'], ['recv', 'موصول شدہ', 'Received'], ['sent', 'بھیجی ہوئی', 'Sent']] }] };
+    }
+    d.items.sort(function (a, b) { return (b.dir ? -1 : 0) - (a.dir ? -1 : 0) || b.size - a.size; });
+    d.id = id;
+    return d;
+  }
 
   /* ---------- thumbnails ---------- */
   var thumbCache = {}, thumbQ = [], thumbBusy = 0;
@@ -108,7 +200,7 @@
         if (!e.isIntersecting) return;
         var el = e.target; io.unobserve(el);
         var path = el.getAttribute('data-p');
-        if (thumbCache[path] !== undefined) { if (thumbCache[path]) el.style.backgroundImage = 'url(' + thumbCache[path] + ')', el.textContent = ''; return; }
+        if (thumbCache[path] !== undefined) { if (thumbCache[path]) { el.style.backgroundImage = 'url(' + thumbCache[path] + ')'; el.textContent = ''; } return; }
         thumbQ.push({ path: path, cb: function (d) { if (d) { el.style.backgroundImage = 'url(' + d + ')'; el.textContent = ''; } } }); pumpThumbs();
       });
     }, { root: $('#body'), rootMargin: '300px' });
@@ -116,57 +208,135 @@
   }
 
   /* ---------- navigation ---------- */
-  function go(view, extra) { S.back.push({ view: S.view, review: S.review }); S.view = view; if (extra !== undefined) S.review = extra; render(); }
+  var TABS = [
+    { id: 'home', ic: '🏠', ur: 'ہوم', en: 'Home' }, { id: 'overview', ic: '📊', ur: 'نتیجہ', en: 'Results' },
+    { id: 'trash', ic: '🗑', ur: 'ٹریش', en: 'Trash' }, { id: 'settings', ic: '⚙', ur: 'ترتیبات', en: 'Settings' }
+  ];
+  var TAB_OF = { home: 'home', overview: 'overview', dups: 'overview', review: 'overview', list: 'overview', wa: 'overview', trash: 'trash', settings: 'settings', done: 'home' };
+  function go(view, extra) { S.back.push({ view: S.view, review: S.review, list: S.list }); S.view = view; if (extra !== undefined) { if (view === 'review') S.review = extra; else S.list = extra; } S.limit = 150; render(); }
   function goBack() {
     if (!$('#modal').hidden) { $('#modal').hidden = true; return true; }
     if (S.view === 'scanning') return true;
     if (S.view === 'gate' || (S.view === 'home' && !S.back.length)) return false;
     var b = S.back.pop() || { view: 'home' };
-    S.view = b.view; S.review = b.review; render(); return true;
+    S.view = b.view; S.review = b.review; S.list = b.list; render(); return true;
   }
   try { if (AppPlugin && AppPlugin.addListener) AppPlugin.addListener('backButton', function () { if (!goBack()) AppPlugin.exitApp(); }); } catch (e) { /* back button stays default */ }
 
-  /* ---------- screens ---------- */
-  function setTop(titleHtml, act) { $('#title').innerHTML = titleHtml; $('#topact').innerHTML = act || ''; }
-  function setBottom(html) { var b = $('#bottom'); b.hidden = !html; b.innerHTML = html || ''; }
+  /* ---------- chrome ---------- */
+  function langToggle() {
+    return '<div class="lang"><button data-l="en" class="' + (PREF.lang === 'en' ? 'on' : '') + '">EN</button><button data-l="ur" class="' + (PREF.lang !== 'en' ? 'on' : '') + '">اردو</button></div>';
+  }
+  function setTop(titleHtml) {
+    $('#title').innerHTML = titleHtml;
+    $('#topact').innerHTML = langToggle();
+    [].forEach.call(document.querySelectorAll('#topact [data-l]'), function (b) {
+      b.onclick = function () { var l = b.dataset.l; if (l === 'en') setPref('lang', 'en'); else if (PREF.lang === 'en') setPref('lang', 'both'); applyLook(); render(); };
+    });
+  }
+  function setBottom(html) { var b = $('#action'); b.hidden = !html; b.innerHTML = html || ''; }
+  function setNav(on) {
+    var n = $('#nav'); n.hidden = !on; if (!on) return;
+    var cur = TAB_OF[S.view];
+    n.innerHTML = TABS.map(function (t) { return '<button data-tab="' + t.id + '" class="' + (t.id === cur ? 'on' : '') + '"><i>' + t.ic + '</i>' + (PREF.lang === 'en' ? t.en : t.ur) + '</button>'; }).join('');
+    [].forEach.call(n.querySelectorAll('[data-tab]'), function (b) {
+      b.onclick = function () {
+        var id = b.dataset.tab; S.back = [];
+        if (id === 'trash') { loadTrash().then(function () { S.view = 'trash'; render(); }); return; }
+        S.view = id; render();
+      };
+    });
+  }
+  function moveBar() {
+    var t = selTotals();
+    if (!t.n) return setBottom('');
+    setBottom('<button class="btn" id="movebtn">' + T('ٹریش میں بھیجیں (' + t.n + ' · ' + fmt(t.b) + ')', 'Move selected to trash (' + t.n + ' · ' + fmt(t.b) + ')') + '</button>');
+    $('#movebtn').onclick = confirmMove;
+  }
+  function footer() { return '<div class="foot">' + tt('سب کچھ آپ کے فون میں ہوتا ہے، کچھ اپلوڈ نہیں ہوتا۔', 'Everything stays on your phone. Nothing is uploaded.') + '<br>Developed by <b>SMAA</b></div>'; }
 
   function render() {
-    var fn = { gate: vGate, home: vHome, scanning: vScan, results: vResults, review: vReview, trash: vTrash, done: vDone }[S.view] || vHome;
+    var fn = { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone }[S.view] || vHome;
     $('#body').scrollTop = 0;
+    $('#body').onclick = null;
+    setNav(S.view !== 'gate' && S.view !== 'scanning');
+    setBottom('');
     fn();
   }
 
+  function needScan() {
+    $('#body').innerHTML = '<div class="card center"><div style="font-size:50px">🔍</div><h2 style="font-size:20px">' + T('پہلے اسکین کریں', 'Scan first') + '</h2><p class="mut">' + tt('فون اسکین کرنے کے بعد یہاں نتیجہ نظر آئے گا۔', 'The result will appear here after a scan.') + '</p><button class="btn" id="scanhere">' + T('فون اسکین کریں', 'Scan my phone') + '</button></div>' + footer();
+    $('#scanhere').onclick = startScan;
+  }
+
+  /* ---------- screens ---------- */
   function vGate() {
-    setTop('کلینووا <small>Cleanova</small>'); setBottom('');
+    setTop(T('کلینووا', 'Cleanova')); setNav(false);
     $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">🔒</div><h2 style="font-size:22px">' + T('اجازت درکار ہے', 'Permission needed') + '</h2>' +
-      '<p class="mut" style="margin-top:8px">ڈپلیکیٹ فائلیں ڈھونڈنے کے لیے کلینووا کو فون کی فائلیں دیکھنے کی اجازت چاہیے۔ سب کچھ آپ کے فون میں ہی رہتا ہے، کچھ اپلوڈ نہیں ہوتا۔</p>' +
-      '<p class="mut e" style="margin-top:4px">Cleanova needs access to files to find duplicates. Everything stays on your phone; nothing is uploaded.</p>' +
+      '<p class="mut" style="margin-top:8px">' + tt('فائلیں ڈھونڈنے اور صاف کرنے کے لیے کلینووا کو فون کی فائلیں دیکھنے کی اجازت چاہیے۔ سب کچھ آپ کے فون میں ہی رہتا ہے، کچھ اپلوڈ نہیں ہوتا۔', 'Cleanova needs access to your files to find and clean them. Everything stays on your phone; nothing is uploaded.') + '</p>' +
       '<button class="btn" id="allow">' + T('اجازت دیں', 'Allow access') + '</button>' +
-      '<p class="mut" style="margin-top:12px;font-size:14px">کھلنے والی سکرین میں Cleanova کو آن کریں، پھر واپس آ جائیں۔</p></div>';
+      '<p class="mut" style="margin-top:12px">' + tt('کھلنے والی سکرین میں Cleanova کو آن کریں، پھر واپس آ جائیں۔', 'Turn Cleanova on in the screen that opens, then come back.') + '</p></div>' + footer();
     $('#allow').onclick = function () { P.requestAccess().then(function (r) { if (r && r.granted) refreshStatus(); }).catch(function () { /* user will return */ }); };
   }
 
-  function vHome() {
-    setTop('کلینووا <small>Cleanova</small>', '<button class="iconbtn" id="tbtn" aria-label="ٹریش">🗑</button>'); setBottom('');
-    var used = S.total ? Math.round((S.total - S.free) / S.total * 100) : 0;
-    $('#body').innerHTML = '<div class="card"><div class="mut">' + T('فون کی جگہ', 'Phone storage') + '</div><div class="big">' + fmt(S.free) + '</div><div class="mut">خالی ہے · ' + fmt(S.total) + ' میں سے <span class="e" style="display:inline">free of total</span></div><div class="bar"><i style="width:' + used + '%"></i></div></div>' +
-      '<div class="card"><div class="switch"><div>' + T('ملتی جلتی تصاویر بھی ڈھونڈیں', 'Also find similar photos (slower)') + '</div><button class="sw" id="swsim" aria-pressed="' + S.similar + '" aria-label="ملتی جلتی تصاویر"></button></div></div>' +
-      '<button class="btn" id="scanbtn">' + T('اسکین شروع کریں', 'Start scan') + '</button>' +
-      (S.groups.length ? '<button class="btn o" id="lastbtn">' + T('پچھلا نتیجہ دیکھیں', 'View last result') + '</button>' : '') +
-      '<div class="foot">سب کچھ آپ کے فون میں ہوتا ہے۔ کچھ اپلوڈ نہیں ہوتا۔<br>Developed by SMAA</div>';
-    $('#swsim').onclick = function () { S.similar = !S.similar; store('similar', S.similar); this.setAttribute('aria-pressed', String(S.similar)); };
-    $('#scanbtn').onclick = startScan;
-    if ($('#lastbtn')) $('#lastbtn').onclick = function () { go('results'); };
-    $('#tbtn').onclick = function () { loadTrash().then(function () { go('trash'); }); };
+  function ring(pct) {
+    var dash = Math.max(2, Math.min(100, pct)) * 0.97;
+    return '<div class="ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--line)" stroke-width="3.4"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--acc)" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="' + dash + ' 100"/></svg><div>' + pct + '%<small>' + tt('استعمال', 'used') + '</small></div></div>';
+  }
+  function tile(id, ic, ur, en, sub, size) {
+    var cap = PREF.lang === 'en' ? sub[1] : (PREF.lang === 'ur' ? sub[0] : en);
+    return '<button class="tool" data-open="' + id + '"><div class="ic">' + ic + '</div>' + (size ? '<span class="sz">' + size + '</span>' : '') + '<b>' + (PREF.lang === 'en' ? en : ur) + '</b><small class="e" style="display:block">' + cap + '</small></button>';
+  }
+  function openTool(id) {
+    if (id === 'trash') { loadTrash().then(function () { S.back = []; go('trash'); }); return; }
+    if (!S.scanned) { go(id === 'dups' ? 'dups' : (id === 'wa' ? 'wa' : 'list'), id === 'dups' || id === 'wa' ? undefined : id); return; }
+    if (id === 'dups') go('dups'); else if (id === 'wa') go('wa'); else go('list', id);
   }
 
-  var PH = { walk: ['فائلیں گن رہا ہوں…', 'Counting files'], hash: ['ایک جیسی فائلیں ملا رہا ہوں…', 'Matching identical files'], similar: ['ملتی جلتی تصاویر دیکھ رہا ہوں…', 'Comparing similar photos'] };
+  function vHome() {
+    setTop(T('کلینووا', 'Cleanova'));
+    var used = S.total ? Math.round((S.total - S.free) / S.total * 100) : 0;
+    var pot = S.scanned ? potential() : (S.last ? S.last.b : null);
+    var hero = '<div class="hero">' + ring(used) + '<div><div class="k">' + (pot === null ? T('اسکین کر کے دیکھیں', 'Scan to see how much you can free') : T('آپ خالی کر سکتے ہیں', 'You can free up to')) + '</div>' + (pot === null ? '' : '<div class="big">' + fmt(pot) + '</div>') + '<div class="k" style="font-size:12.5px">' + tt(fmt(S.free) + ' خالی · کل ' + fmt(S.total), fmt(S.free) + ' free of ' + fmt(S.total)) + '</div></div></div>';
+    var sz = function (b) { return S.scanned && b ? fmt(b) : ''; };
+    var sub = {
+      dups: ['ایک جیسی اور ملتی جلتی', 'Exact and similar'], large: ['سب سے بڑی پہلے', 'Biggest first'], wa: ['پرانا میڈیا', 'Old media'], shots: ['عمر کے لحاظ سے', 'By age'],
+      blurry: ['خود دیکھ کر چنیں', 'Review each'], junk: ['خالی فولڈر، APK', 'Empty folders, APKs'], old: ['Download کی پرانی فائلیں', 'Old downloads folder'], trash: ['واپس لانے کے لیے', 'Undo and restore']
+    };
+    $('#body').innerHTML = hero +
+      '<button class="btn" id="scanbtn">' + T('فون اسکین کریں', 'Scan my phone') + '<small class="e">' + tt('ڈپلیکیٹ، کچرا اور بڑی فائلیں ڈھونڈیں', 'Finds duplicates, junk and big files') + '</small></button>' +
+      '<div class="sec">' + tt('صفائی کے اوزار', 'CLEAN-UP TOOLS') + '</div><div class="grid">' +
+      tile('dups', '🖼', 'ڈپلیکیٹ فائلیں', 'Duplicates', sub.dups, sz(dupBytes())) +
+      tile('large', '📦', 'بڑی فائلیں', 'Large files', sub.large, sz(sumItems(S.x.large))) +
+      tile('wa', '💬', 'واٹس ایپ', 'WhatsApp', sub.wa, sz(sumItems(waFiltered()))) +
+      tile('shots', '📱', 'اسکرین شاٹس', 'Screenshots', sub.shots, sz(sumItems(S.x.shots))) +
+      tile('blurry', '🌫', 'دھندلی تصاویر', 'Blurry photos', sub.blurry, sz(sumItems(S.x.blurry))) +
+      tile('junk', '🧹', 'فالتو فائلیں', 'Junk files', sub.junk, sz(sumItems(S.x.junk))) +
+      tile('old', '📥', 'پرانی ڈاؤن لوڈز', 'Old downloads', sub.old, sz(sumItems(S.x.old.filter(function (i) { return older(i, 30); })))) +
+      tile('trash', '♻', 'ٹریش', 'Trash', sub.trash, '') + '</div>' + footer();
+    $('#scanbtn').onclick = startScan;
+    [].forEach.call(document.querySelectorAll('[data-open]'), function (b) { b.onclick = function () { openTool(b.dataset.open); }; });
+  }
+
+  function vOverview() {
+    setTop(T('نتیجہ', 'Results'));
+    if (!S.scanned) return needScan();
+    var rows = [['dups', '🖼', 'ڈپلیکیٹ فائلیں', 'Duplicates', dupBytes(), S.groups.length], ['large', '📦', 'بڑی فائلیں', 'Large files', sumItems(S.x.large), S.x.large.length], ['wa', '💬', 'واٹس ایپ', 'WhatsApp (3 months+)', sumItems(waFiltered()), waFiltered().length],
+      ['shots', '📱', 'اسکرین شاٹس', 'Screenshots', sumItems(S.x.shots), S.x.shots.length], ['blurry', '🌫', 'دھندلی تصاویر', 'Blurry and dark', sumItems(S.x.blurry), S.x.blurry.length],
+      ['junk', '🧹', 'فالتو فائلیں', 'Junk files', sumItems(S.x.junk), S.x.junk.length], ['old', '📥', 'پرانی ڈاؤن لوڈز', 'Old downloads', sumItems(S.x.old), S.x.old.length]];
+    var h = '<div class="hero" style="display:block"><div class="k">' + T('آسانی سے بچ سکتا ہے', 'Easy wins') + '</div><div class="big">' + fmt(potential()) + '</div><div class="k" style="font-size:12.5px">' + nfiles(S.scanned) + ' ' + tt('دیکھی گئیں', 'checked') + '</div></div><div class="card">';
+    rows.forEach(function (r) { h += '<button class="cat" data-open="' + r[0] + '"><span>' + r[1] + ' <b>' + (PREF.lang === 'en' ? r[3] : r[2]) + '</b>' + (PREF.lang === 'both' ? '<small class="e">' + r[3] + '</small>' : '') + '</span><span class="pill' + (r[5] ? ' a' : '') + '">' + r[5] + ' · ' + fmt(r[4]) + '</span></button>'; });
+    $('#body').innerHTML = h + '</div>' + footer();
+    [].forEach.call(document.querySelectorAll('[data-open]'), function (b) { b.onclick = function () { openTool(b.dataset.open); }; });
+  }
+
+  var PH = { walk: ['فائلیں گن رہا ہوں…', 'Counting files'], hash: ['ایک جیسی فائلیں ملا رہا ہوں…', 'Matching identical files'], similar: ['ملتی جلتی تصاویر دیکھ رہا ہوں…', 'Comparing similar photos'], quality: ['دھندلی تصاویر جانچ رہا ہوں…', 'Checking photo quality'], move: ['ٹریش میں بھیج رہا ہوں…', 'Moving to trash'] };
   function vScan() {
-    setTop('اسکین ہو رہا ہے <small>Scanning</small>'); setBottom('');
+    setTop(T('اسکین ہو رہا ہے', 'Scanning')); setBottom(''); setNav(false);
     var p = S.prog || { phase: 'walk', done: 0, total: 0 }, ph = PH[p.phase] || PH.walk;
     $('#body').innerHTML = '<div class="card center"><div class="spin"></div><h2 style="font-size:20px">' + T(ph[0], ph[1]) + '</h2>' +
-      '<div class="big" style="text-align:center;font-size:34px">' + p.done + (p.total ? ' / ' + p.total : '') + '</div><div class="bar"><i style="width:' + (p.total ? Math.round(p.done / p.total * 100) : 5) + '%"></i></div>' +
-      '<p class="mut" style="margin-top:12px;font-size:14px">اسکرین کھلی رکھیں۔ فائلیں زیادہ ہوں تو کچھ منٹ لگ سکتے ہیں۔</p></div>';
+      '<div class="big" style="text-align:center;font-size:32px">' + p.done + (p.total ? ' / ' + p.total : '') + '</div><div class="bar"><i style="width:' + (p.total ? Math.round(p.done / p.total * 100) : 5) + '%"></i></div>' +
+      '<p class="mut" style="margin-top:12px">' + tt('اسکرین کھلی رکھیں۔ فائلیں زیادہ ہوں تو کچھ منٹ لگ سکتے ہیں۔', 'Keep the screen on. It can take a few minutes with many files.') + '</p></div>';
   }
   var scanTick = 0;
   function startScan() {
@@ -179,49 +349,45 @@
       });
       if (lr && lr.then) lr.then(function (x) { h = x; }); else h = lr;
     } catch (e) { /* progress is optional */ }
-    P.scan({ similar: S.similar }).then(function (r) {
+    P.scan({ similar: PREF.similar, quality: PREF.quality, skip: PREF.protect }).then(function (r) {
       try { if (h && h.remove) h.remove(); } catch (e) { /* ignore */ }
-      prepare(r.groups || []); S.scanned = r.files || 0; S.view = 'results'; S.back = [{ view: 'home' }]; render();
+      prepare(r.groups || [], r.extras); S.scanned = r.files || 1; savePotential(); S.view = 'overview'; S.back = []; render();
     }).catch(function (e) {
-      try { if (h && h.remove) h.remove(); } catch (e) { /* ignore */ }
+      try { if (h && h.remove) h.remove(); } catch (e2) { /* ignore */ }
       S.view = 'home'; render(); toast('اسکین نہیں ہو سکا', 'Scan failed: ' + (e && e.message || e));
     });
   }
 
-  function vResults() {
-    setTop('نتیجہ <small>Results</small>');
-    var t = selTotals(), possible = 0, any = false;
-    S.groups.forEach(function (g) { g.items.forEach(function (it) { if (it.path !== g.keeper) possible += it.size; }); any = true; });
-    if (!any) {
-      setBottom('');
-      $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">✨</div><h2 style="font-size:22px">' + T('کوئی ڈپلیکیٹ نہیں ملا', 'No duplicates found') + '</h2><p class="mut">' + (S.scanned || 0) + ' فائلیں دیکھی گئیں · files checked</p></div>';
-      return;
-    }
-    var h = '<div class="card"><div class="mut">' + T('آپ بچا سکتے ہیں', 'You can save up to') + '</div><div class="big">' + fmt(possible) + '</div><div class="mut">' + S.groups.length + ' گروپ · groups</div></div><div class="card">';
+  /* duplicates overview (categories) */
+  function vDups() {
+    setTop(T('ڈپلیکیٹ فائلیں', 'Duplicates'));
+    if (!S.scanned) return needScan();
+    var any = S.groups.length > 0, possible = dupBytes();
+    if (!any) { $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">✨</div><h2 style="font-size:22px">' + T('کوئی ڈپلیکیٹ نہیں ملا', 'No duplicates found') + '</h2></div>' + footer(); return; }
+    var h = '<div class="hero" style="display:block"><div class="k">' + T('آپ بچا سکتے ہیں', 'You can save up to') + '</div><div class="big">' + fmt(possible) + '</div><div class="k">' + S.groups.length + ' ' + tt('گروپ', 'groups') + '</div></div><div class="card">';
     CATS.forEach(function (c) {
       var s = catStats(c.id); if (!s.groups) return;
-      h += '<button class="cat" data-cat="' + c.id + '"><span>' + c.ic + ' <b>' + c.ur + '</b><small class="e">' + c.en + '</small></span><span class="pill">' + s.groups + ' · ' + fmt(s.bytes) + (s.sel ? ' · ✓' + s.sel : '') + '</span></button>';
+      h += '<button class="cat" data-cat="' + c.id + '"><span>' + c.ic + ' <b>' + (PREF.lang === 'en' ? c.en : c.ur) + '</b>' + (PREF.lang === 'both' ? '<small class="e">' + c.en + '</small>' : '') + '</span><span class="pill a">' + s.groups + ' · ' + fmt(s.bytes) + (s.sel ? ' · ✓' + s.sel : '') + '</span></button>';
     });
-    h += '</div><p class="mut" style="margin-top:12px;font-size:14px">ہو بہو ایک جیسی فائلیں پہلے سے چنی ہوئی ہیں اور ہر گروپ میں ایک اصل فائل رہے گی۔ ملتی جلتی تصاویر آپ خود دیکھ کر چنیں۔</p>';
-    $('#body').innerHTML = h;
+    h += '</div><p class="mut" style="margin-top:12px">' + tt('ہو بہو ایک جیسی فائلیں پہلے سے چنی ہوئی ہیں اور ہر گروپ میں ایک اصل فائل رہے گی۔ ملتی جلتی تصاویر آپ خود دیکھ کر چنیں۔', 'Exact copies are pre-selected and one original always stays in each group. Choose similar photos yourself.') + '</p>';
+    $('#body').innerHTML = h + footer();
     [].forEach.call(document.querySelectorAll('[data-cat]'), function (b) { b.onclick = function () { go('review', b.dataset.cat); }; });
-    setBottom('<button class="btn" id="movebtn"' + (t.n ? '' : ' disabled') + '>' + T('ٹریش میں بھیجیں (' + t.n + ' فائلیں · ' + fmt(t.b) + ')', 'Move selected to trash') + '</button>');
-    $('#movebtn').onclick = confirmMove;
+    moveBar();
   }
 
   function vReview() {
     var cat = CATS.filter(function (c) { return c.id === S.review; })[0];
-    setTop(cat.ur + '<small class="e">' + cat.en + '</small>');
+    setTop(catLabel(cat));
     var gs = S.groups.filter(function (g) { return g.cat === cat.id; });
     var isSim = cat.id === 'simg';
     var h = '<div class="tabs"><button id="selall">' + T(isSim ? 'تجویز کردہ چنیں' : 'سب تجویز کردہ چنیں', 'Select suggested') + '</button><button id="selnone">' + T('کچھ نہ چنیں', 'Select none') + '</button></div>' +
-      '<p class="mut" style="margin-top:8px;font-size:14px">تصویر پر ٹچ کر کے رکھیں/ہٹائیں بدلیں۔ سبز = رکھیں، سرخ = ٹریش میں جائے گی۔</p>';
+      '<p class="mut" style="margin-top:8px">' + tt('تصویر پر ٹچ کر کے رکھیں/ہٹائیں بدلیں۔ سبز = رکھیں، سرخ = ٹریش میں جائے گی۔', 'Tap a photo to switch keep/remove. Green = keep, red = goes to trash.') + '</p>';
     gs.forEach(function (g) {
       var sv = 0; g.items.forEach(function (it) { if (S.sel[it.path]) sv += it.size; });
-      h += '<div class="grp" data-g="' + g.id + '"><div class="hd"><span>' + g.items.length + ' فائلیں' + (g.type === 'similar' ? ' · ملتی جلتی' : ' · ایک جیسی') + '</span><span class="pill">' + (sv ? '−' + fmt(sv) : fmt(g.size)) + '</span></div><div class="thumbs">';
+      h += '<div class="grp" data-g="' + g.id + '"><div class="hd"><span>' + nfiles(g.items.length) + ' · ' + (g.type === 'similar' ? tt('ملتی جلتی', 'similar') : tt('ایک جیسی', 'identical')) + '</span><span class="pill">' + (sv ? '−' + fmt(sv) : fmt(g.size)) + '</span></div><div class="thumbs">';
       g.items.forEach(function (it) {
         var del = !!S.sel[it.path], k = kind(it.path);
-        h += '<button class="th ' + (del ? 'del' : 'keep') + '" data-p="' + esc(it.path) + '"><div class="im" ' + (k === 'img' || k === 'vid' ? 'data-p="' + esc(it.path) + '"' : '') + '>' + (k === 'img' || k === 'vid' ? '' : esc(ext(it.path) || 'file')) + '</div><div class="nm">' + esc(base(it.path)) + '</div><div class="nm">' + esc(folder(it.path)) + ' · ' + fmt(it.size) + '</div><div class="st">' + (del ? 'ہٹائیں' : (it.path === g.keeper ? 'رکھیں ★' : 'رکھیں')) + '</div></button>';
+        h += '<button class="th ' + (del ? 'del' : 'keep') + '" data-p="' + esc(it.path) + '"><div class="im" ' + (k === 'img' || k === 'vid' ? 'data-p="' + esc(it.path) + '"' : '') + '>' + (k === 'img' || k === 'vid' ? '' : esc(ext(it.path) || 'file')) + '</div><div class="nm">' + esc(base(it.path)) + '</div><div class="nm">' + esc(folder(it.path)) + ' · ' + fmt(it.size) + '</div><div class="st">' + (del ? tt('ہٹائیں', 'Remove') : (it.path === g.keeper ? tt('رکھیں ★', 'Keep ★') : tt('رکھیں', 'Keep'))) + '</div></button>';
       });
       h += '</div></div>';
     });
@@ -240,46 +406,115 @@
       }
       var y = $('#body').scrollTop; vReview(); $('#body').scrollTop = y;
     };
-    var t = selTotals();
-    setBottom('<button class="btn" id="movebtn"' + (t.n ? '' : ' disabled') + '>' + T('ٹریش میں بھیجیں (' + t.n + ' فائلیں · ' + fmt(t.b) + ')', 'Move selected to trash') + '</button>');
-    $('#movebtn').onclick = confirmMove;
+    moveBar();
+  }
+
+  /* generic list: large files, screenshots, blurry, junk, old downloads, WhatsApp types */
+  function chipsHtml(def) {
+    var h = '';
+    def.chips.forEach(function (c) {
+      h += '<div class="chips">';
+      c.opts.forEach(function (o) { h += '<button class="chip' + (S.f[c.key] === o[0] ? ' on' : '') + '" data-f="' + c.key + '" data-v="' + o[0] + '">' + (PREF.lang === 'en' ? o[2] : o[1]) + '</button>'; });
+      h += '</div>';
+    });
+    return h;
+  }
+  function vList() {
+    var def = listDef(S.list);
+    setTop(T(def.ur, def.en));
+    if (!S.scanned) return needScan();
+    var items = def.items, total = sumItems(items), shown = items.slice(0, S.limit);
+    var h = '<p class="mut" style="margin-top:6px">' + tt(def.hint[0], def.hint[1]) + '</p>' + chipsHtml(def) +
+      '<div class="card" style="margin-top:12px;padding:10px 14px"><span class="mut">' + nfiles(items.length) + ' · </span><b style="font-family:system-ui;color:var(--acc)">' + fmt(total) + '</b></div>';
+    if (!items.length) h += '<div class="card center"><div style="font-size:46px">✨</div><h2 style="font-size:19px">' + T('کچھ نہیں ملا', 'Nothing found') + '</h2></div>';
+    else {
+      h += '<div class="tabs"><button id="selall">' + T('سب چنیں', 'Select all') + '</button><button id="selnone">' + T('کچھ نہ چنیں', 'Select none') + '</button></div><div class="lg">';
+      shown.forEach(function (it) {
+        var on = !!S.sel[it.path], k = it.dir ? 'dir' : kind(it.path), media = k === 'img' || k === 'vid';
+        h += '<button class="th' + (on ? ' del' : '') + '" data-p="' + esc(it.path) + '"><div class="im" ' + (media ? 'data-p="' + esc(it.path) + '"' : '') + '>' + (media ? '' : (it.dir ? '📁' : esc(ext(it.path) || 'file'))) + '</div>' +
+          (it.reason ? '<span class="tag">' + (it.reason === 'dark' ? tt('تاریک', 'dark') : tt('دھندلی', 'blur')) + '</span>' : '') +
+          '<div class="nm">' + esc(base(it.path)) + '</div><div class="nm">' + esc(it.dir ? folder(it.path) : fmt(it.size) + ' · ' + new Date(it.mtime).toISOString().slice(0, 10)) + '</div><div class="st">' + (on ? tt('ہٹائیں', 'Remove') : '&nbsp;') + '</div></button>';
+      });
+      h += '</div>';
+      if (items.length > shown.length) h += '<button class="btn o" id="more">' + T('مزید دکھائیں', 'Show more') + '</button>';
+    }
+    $('#body').innerHTML = h;
+    watchThumbs($('#body'));
+    [].forEach.call(document.querySelectorAll('[data-f]'), function (b) {
+      b.onclick = function () { var v = b.dataset.v; S.f[b.dataset.f] = isNaN(+v) || v === '' ? v : +v; S.limit = 150; vList(); };
+    });
+    if (items.length) {
+      $('#selall').onclick = function () { items.forEach(function (it) { S.sel[it.path] = it.size; }); var y = $('#body').scrollTop; vList(); $('#body').scrollTop = y; };
+      $('#selnone').onclick = function () { items.forEach(function (it) { delete S.sel[it.path]; }); var y = $('#body').scrollTop; vList(); $('#body').scrollTop = y; };
+      $('#body').onclick = function (e) {
+        var th = e.target.closest('.th'); if (!th) return;
+        var p = th.dataset.p, it = items.filter(function (x) { return x.path === p; })[0];
+        if (S.sel[p] !== undefined) delete S.sel[p]; else S.sel[p] = it.size;
+        var y = $('#body').scrollTop; vList(); $('#body').scrollTop = y;
+      };
+    }
+    if ($('#more')) $('#more').onclick = function () { S.limit += 150; var y = $('#body').scrollTop; vList(); $('#body').scrollTop = y; };
+    moveBar();
+  }
+
+  function vWa() {
+    setTop(T('واٹس ایپ صفائی', 'WhatsApp cleaner'));
+    if (!S.scanned) return needScan();
+    var f = waFiltered();
+    var h = '<p class="mut" style="margin-top:6px">' + tt('واٹس ایپ کا پرانا میڈیا۔ چیٹ کا متن نہیں چھیڑا جاتا۔', 'Old WhatsApp media. Your chat text is not touched.') + '</p>' + chipsHtml({ chips: [AGE_OPTS('waAge'), { key: 'waDir', opts: [['all', 'سب', 'All'], ['recv', 'موصول شدہ', 'Received'], ['sent', 'بھیجی ہوئی', 'Sent']] }] }) + '<div class="card">';
+    WA_TYPES.forEach(function (t) {
+      var l = f.filter(function (i) { return waType(i) === t.id; });
+      h += '<button class="cat" data-wt="' + t.id + '"><span>' + t.ic + ' <b>' + (PREF.lang === 'en' ? t.en : t.ur) + '</b>' + (PREF.lang === 'both' ? '<small class="e">' + t.en + '</small>' : '') + '<small class="e" style="display:block">' + nfiles(l.length) + '</small></span><span class="pill a">' + fmt(sumItems(l)) + '</span></button>';
+    });
+    $('#body').innerHTML = h + '</div>' + footer();
+    [].forEach.call(document.querySelectorAll('[data-f]'), function (b) { b.onclick = function () { var v = b.dataset.v; S.f[b.dataset.f] = isNaN(+v) ? v : +v; vWa(); }; });
+    [].forEach.call(document.querySelectorAll('[data-wt]'), function (b) { b.onclick = function () { go('list', 'wa:' + b.dataset.wt); }; });
+    moveBar();
   }
 
   /* ---------- move to trash ---------- */
   function confirmMove() {
     var t = selTotals(); if (!t.n) return;
     var m = $('#modal'); m.hidden = false;
-    $('#sheet').innerHTML = '<h2 style="font-size:22px">' + T('تصدیق', 'Confirm') + '</h2><p style="margin-top:6px">' + t.n + ' فائلیں ٹریش میں جائیں گی۔</p><div class="big" style="font-size:34px">' + fmt(t.b) + '</div>' +
-      '<p class="mut" style="font-size:14px">فائلیں فوراً ختم نہیں ہوتیں۔ تقریباً 30 دن ٹریش میں رہتی ہیں اور آپ واپس لا سکتے ہیں۔ ہر گروپ میں ایک اصل فائل رہے گی۔</p>' +
+    $('#sheet').innerHTML = '<h2 style="font-size:22px">' + T('تصدیق', 'Confirm') + '</h2><p style="margin-top:6px">' + tt(t.n + ' آئٹم ٹریش میں جائیں گے۔', t.n + ' items will go to trash.') + '</p><div class="big" style="font-size:32px">' + fmt(t.b) + '</div>' +
+      '<p class="mut">' + tt('فائلیں فوراً ختم نہیں ہوتیں۔ ' + PREF.trashDays + ' دن تک ٹریش میں رہتی ہیں اور آپ واپس لا سکتے ہیں۔ ڈپلیکیٹ گروپ میں ایک اصل فائل رہے گی۔', 'Nothing is deleted right away. Files stay in the trash for ' + PREF.trashDays + ' days and you can restore them. One original always stays in each duplicate group.') + '</p>' +
       '<button class="btn" id="okmove">' + T('ٹریش میں بھیجیں', 'Move to trash') + '</button><button class="btn o" id="nomove">' + T('واپس جائیں', 'Cancel') + '</button>';
     $('#nomove').onclick = function () { m.hidden = true; };
     $('#okmove').onclick = function () { m.hidden = true; doMove(); };
   }
   function doMove() {
-    var paths = Object.keys(S.sel), done = 0, bytes = 0, i = 0;
-    S.view = 'scanning'; S.prog = { phase: 'move', done: 0, total: paths.length }; PH.move = ['ٹریش میں بھیج رہا ہوں…', 'Moving to trash']; render();
+    var all = Object.keys(S.sel), dirs = all.filter(function (p) { return S.dirSet[p]; }), paths = all.filter(function (p) { return !S.dirSet[p]; }), done = 0, bytes = 0, i = 0, total = all.length;
+    S.view = 'scanning'; S.prog = { phase: 'move', done: 0, total: total }; render();
     (function next() {
-      if (i >= paths.length) return finishMove(done, bytes);
+      if (i >= paths.length) {
+        if (!dirs.length) return finishMove(done, bytes);
+        return P.deleteEmptyDirs({ paths: dirs }).then(function (r) { done += (r && r.deleted) || 0; finishMove(done, bytes); }).catch(function () { finishMove(done, bytes); });
+      }
       var chunk = paths.slice(i, i + 40); i += 40;
-      P.trashMove({ paths: chunk }).then(function (r) { done += r.moved || 0; bytes += r.bytes || 0; S.prog = { phase: 'move', done: Math.min(i, paths.length), total: paths.length }; vScan(); next(); })
+      P.trashMove({ paths: chunk }).then(function (r) { done += r.moved || 0; bytes += r.bytes || 0; S.prog = { phase: 'move', done: Math.min(i, total), total: total }; vScan(); next(); })
         .catch(function () { next(); });
     })();
   }
   function finishMove(done, bytes) {
-    var movedSet = {}; Object.keys(S.sel).forEach(function (p) { movedSet[p] = 1; });
-    S.groups.forEach(function (g) { g.items = g.items.filter(function (it) { return !movedSet[it.path]; }); });
+    var gone = {}; Object.keys(S.sel).forEach(function (p) { gone[p] = 1; });
+    function keep(it) { return !gone[it.path]; }
+    S.groups.forEach(function (g) { g.items = g.items.filter(keep); });
     S.groups = S.groups.filter(function (g) { return g.items.length > 1; });
     S.groups.forEach(function (g) { if (!g.items.some(function (it) { return it.path === g.keeper; })) g.keeper = best(g.items, true).path; });
-    S.sel = {}; S.lastMoved = { n: done, b: bytes }; S.back = []; S.view = 'done'; render(); refreshStatus(true);
+    ['large', 'wa', 'shots', 'junk', 'old', 'blurry'].forEach(function (k) { S.x[k] = S.x[k].filter(keep); });
+    S.sel = {}; S.lastMoved = { n: done, b: bytes }; S.back = [];
+    store('freed', (store('freed') || 0) + bytes);
+    savePotential(); S.view = 'done'; render(); refreshStatus(true);
   }
   function vDone() {
-    setTop('مکمل <small>Done</small>'); setBottom('');
+    setTop(T('مکمل', 'Done')); setBottom('');
     var m = S.lastMoved || { n: 0, b: 0 };
-    $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">✅</div><h2 style="font-size:22px">' + m.n + ' فائلیں ٹریش میں بھیج دی گئیں</h2><div class="big" style="text-align:center">' + fmt(m.b) + '</div>' +
-      '<p class="mut" style="margin-top:8px;font-size:14px">جگہ تب خالی ہو گی جب آپ ٹریش خالی کریں گے۔ 30 دن بعد ٹریش خود خالی ہو جاتا ہے۔</p><p class="mut e">Space is freed when the trash is emptied. It also empties itself after 30 days.</p>' +
-      '<button class="btn" id="emptynow">' + T('ٹریش ابھی خالی کریں', 'Empty trash now') + '</button><button class="btn o" id="later">' + T('بعد میں', 'Later') + '</button></div>';
-    $('#emptynow').onclick = function () { P.trashEmpty({}).then(function (r) { toast('جگہ خالی ہو گئی: ' + fmt(r.freed || 0), 'Freed'); S.view = 'home'; refreshStatus(); }).catch(function () { toast('خالی نہیں ہو سکا', 'Could not empty'); }); };
-    $('#later').onclick = function () { S.view = S.groups.length ? 'results' : 'home'; S.back = [{ view: 'home' }]; refreshStatus(); };
+    $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">✅</div><h2 style="font-size:21px">' + T(m.n + ' آئٹم ٹریش میں بھیج دیے گئے', m.n + ' items moved to trash') + '</h2><div class="big" style="text-align:center">' + fmt(m.b) + '</div>' +
+      '<p class="mut" style="margin-top:8px">' + tt('جگہ تب خالی ہو گی جب آپ ٹریش خالی کریں گے۔ ' + PREF.trashDays + ' دن بعد ٹریش خود خالی ہو جاتا ہے۔', 'Space is freed when the trash is emptied. It also empties itself after ' + PREF.trashDays + ' days.') + '</p>' +
+      '<div class="row" style="margin-top:8px"><div class="t"><span class="mut">' + tt('اب تک کل صفائی', 'Total cleaned so far') + '</span></div><b style="font-family:system-ui;color:var(--acc)">' + fmt(store('freed') || 0) + '</b></div>' +
+      '<button class="btn" id="emptynow">' + T('ٹریش ابھی خالی کریں', 'Empty trash now') + '</button><button class="btn o" id="later">' + T('بعد میں', 'Later') + '</button></div>' + footer();
+    $('#emptynow').onclick = function () { P.trashEmpty({}).then(function (r) { toast('جگہ خالی ہو گئی: ' + fmt(r.freed || 0), 'Freed ' + fmt(r.freed || 0)); S.view = 'home'; refreshStatus(); }).catch(function () { toast('خالی نہیں ہو سکا', 'Could not empty'); }); };
+    $('#later').onclick = function () { S.view = 'overview'; S.back = []; refreshStatus(); };
   }
 
   /* ---------- trash ---------- */
@@ -287,14 +522,14 @@
     return P.trashList().then(function (r) { S.trash = { items: r.items || [], bytes: r.bytes || 0 }; S.trashSel = {}; }).catch(function () { S.trash = { items: [], bytes: 0 }; });
   }
   function vTrash() {
-    setTop('ٹریش <small>Trash</small>'); setBottom('');
+    setTop(T('ٹریش', 'Trash'));
     var tr = S.trash, now = Date.now();
-    if (!tr.items.length) { $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">🗑</div><h2 style="font-size:20px">' + T('ٹریش خالی ہے', 'Trash is empty') + '</h2></div>'; return; }
-    var h = '<div class="card"><div class="mut">' + T('ٹریش میں', 'In trash') + '</div><div class="big">' + fmt(tr.bytes) + '</div><div class="mut">' + tr.items.length + ' فائلیں</div></div>' +
+    if (!tr.items.length) { $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">🗑</div><h2 style="font-size:20px">' + T('ٹریش خالی ہے', 'Trash is empty') + '</h2></div>' + footer(); return; }
+    var h = '<div class="hero" style="display:block"><div class="k">' + T('ٹریش میں', 'In trash') + '</div><div class="big">' + fmt(tr.bytes) + '</div><div class="k">' + nfiles(tr.items.length) + '</div></div>' +
       '<div class="tabs"><button id="tall">' + T('سب چنیں', 'Select all') + '</button><button id="tnone">' + T('کچھ نہ چنیں', 'None') + '</button></div><div class="card" id="tlist">';
     tr.items.forEach(function (it) {
-      var left = Math.max(0, 30 - Math.floor((now - it.ts) / 86400000)), k = kind(it.original);
-      h += '<button class="cat" data-t="' + esc(it.id) + '" style="direction:rtl"><span class="sw" aria-pressed="' + !!S.trashSel[it.id] + '"></span><span style="flex:1;min-width:0;text-align:right"><b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr;font-family:system-ui;font-size:14px">' + esc(base(it.original)) + '</b><small class="e">' + esc(folder(it.original)) + ' · ' + left + ' دن باقی (days left)</small></span><span class="pill">' + fmt(it.size) + '</span></button>';
+      var left = Math.max(0, PREF.trashDays - Math.floor((now - it.ts) / 86400000));
+      h += '<button class="cat" data-t="' + esc(it.id) + '"><span class="sw" aria-pressed="' + !!S.trashSel[it.id] + '"></span><span class="t" style="flex:1;min-width:0;text-align:start"><b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr;font-family:system-ui;font-size:14px;text-align:start">' + esc(base(it.original)) + '</b><small class="e" style="display:block">' + esc(folder(it.original)) + ' · ' + left + ' ' + tt('دن باقی', 'days left') + '</small></span><span class="pill">' + fmt(it.size) + '</span></button>';
     });
     h += '</div>';
     $('#body').innerHTML = h;
@@ -303,15 +538,75 @@
     $('#tall').onclick = function () { tr.items.forEach(function (it) { S.trashSel[it.id] = 1; }); vTrash(); };
     $('#tnone').onclick = function () { S.trashSel = {}; vTrash(); };
     $('#tlist').onclick = function (e) { var b = e.target.closest('[data-t]'); if (!b) return; var id = b.dataset.t; if (S.trashSel[id]) delete S.trashSel[id]; else S.trashSel[id] = 1; var y = $('#body').scrollTop; vTrash(); $('#body').scrollTop = y; };
-    $('#restore').onclick = function () { P.trashRestore({ ids: Object.keys(S.trashSel) }).then(function (r) { toast('واپس آ گئیں: ' + (r.restored || 0), 'Restored'); loadTrash().then(vTrash); }); };
+    $('#restore').onclick = function () {
+      var ids = Object.keys(S.trashSel), back = 0; tr.items.forEach(function (it) { if (S.trashSel[it.id]) back += it.size; });
+      P.trashRestore({ ids: ids }).then(function (r) { store('freed', Math.max(0, (store('freed') || 0) - back)); toast('واپس آ گئیں: ' + (r.restored || 0), 'Restored ' + (r.restored || 0)); loadTrash().then(vTrash); });
+    };
     $('#purge').onclick = function () { askForever(Object.keys(S.trashSel)); };
     $('#purgeall').onclick = function () { askForever(null); };
   }
   function askForever(ids) {
     var m = $('#modal'); m.hidden = false;
-    $('#sheet').innerHTML = '<h2 style="font-size:22px">' + T('کیا ہمیشہ کے لیے ہٹائیں؟', 'Delete forever?') + '</h2><p class="mut" style="margin-top:6px">یہ فائلیں دوبارہ واپس نہیں آئیں گی۔</p><button class="btn red" id="yesforever">' + T('ہاں، ہٹا دیں', 'Yes, delete') + '</button><button class="btn o" id="noforever">' + T('منسوخ', 'Cancel') + '</button>';
+    $('#sheet').innerHTML = '<h2 style="font-size:22px">' + T('کیا ہمیشہ کے لیے ہٹائیں؟', 'Delete forever?') + '</h2><p class="mut" style="margin-top:6px">' + tt('یہ فائلیں دوبارہ واپس نہیں آئیں گی۔', 'These files cannot be brought back.') + '</p><button class="btn red" id="yesforever">' + T('ہاں، ہٹا دیں', 'Yes, delete') + '</button><button class="btn o" id="noforever">' + T('منسوخ', 'Cancel') + '</button>';
     $('#noforever').onclick = function () { m.hidden = true; };
-    $('#yesforever').onclick = function () { m.hidden = true; P.trashEmpty(ids ? { ids: ids } : {}).then(function (r) { toast('جگہ خالی ہو گئی: ' + fmt(r.freed || 0), 'Freed'); loadTrash().then(vTrash); refreshStatus(true); }); };
+    $('#yesforever').onclick = function () { m.hidden = true; P.trashEmpty(ids ? { ids: ids } : {}).then(function (r) { toast('جگہ خالی ہو گئی: ' + fmt(r.freed || 0), 'Freed ' + fmt(r.freed || 0)); loadTrash().then(vTrash); refreshStatus(true); }); };
+  }
+
+  /* ---------- settings ---------- */
+  function chipRow(key, opts) {
+    return '<div class="chips">' + opts.map(function (o) { return '<button class="chip' + (PREF[key] === o[0] ? ' on' : '') + '" data-pref="' + key + '" data-v="' + o[0] + '">' + (PREF.lang === 'en' ? o[2] : o[1]) + '</button>'; }).join('') + '</div>';
+  }
+  function swRow(key, ur, en, sub) {
+    return '<div class="row"><div class="t"><b>' + (PREF.lang === 'en' ? en : ur) + '</b><small class="e" style="display:block">' + (PREF.lang === 'en' ? sub[1] : sub[0]) + '</small></div><button class="sw" data-sw="' + key + '" aria-pressed="' + !!PREF[key] + '" aria-label="' + en + '"></button></div>';
+  }
+  function vSettings() {
+    setTop(T('ترتیبات', 'Settings'));
+    var h = '<div class="card"><div class="row"><div class="t"><b>' + tt('زبان', 'Language') + '</b></div></div>' + chipRow('lang', [['en', 'English', 'English'], ['ur', 'اردو', 'اردو'], ['both', 'اردو + English', 'اردو + English']]) +
+      '<div class="row" style="margin-top:6px"><div class="t"><b>' + tt('تھیم', 'Theme') + '</b></div></div>' + chipRow('theme', [['dark', 'ڈارک', 'Dark'], ['light', 'لائٹ', 'Light']]) + '</div>' +
+      '<div class="card">' + swRow('similar', 'ملتی جلتی تصاویر', 'Find similar photos', ['اسکین سست مگر زیادہ نتائج', 'Slower scan, more results']) + swRow('quality', 'دھندلی تصاویر جانچیں', 'Check blurry photos', ['اسکین میں کچھ زیادہ وقت لگے گا', 'Adds some time to the scan']) + '</div>' +
+      '<div class="card"><div class="row"><div class="t"><b>' + tt('ڈپلیکیٹ میں کون سی کاپی رکھیں', 'Which copy to keep') + '</b></div></div>' + chipRow('keep', [['camera', 'کیمرہ اصل', 'Camera original'], ['oldest', 'سب سے پرانی', 'Oldest'], ['newest', 'سب سے نئی', 'Newest'], ['largest', 'سب سے بڑی', 'Largest']]) + '</div>' +
+      '<div class="card"><button class="cat" id="protbtn" style="padding:6px 0"><span class="t"><b>' + tt('محفوظ فولڈرز', 'Protected folders') + '</b><small class="e" style="display:block">' + tt('کبھی اسکین نہیں ہوں گے · ' + PREF.protect.length, 'Never scanned · ' + PREF.protect.length) + '</small></span><span class="pill a">' + tt('بدلیں', 'Edit') + '</span></button></div>' +
+      '<div class="card">' + swRow('remind', 'ماہانہ یاد دہانی', 'Monthly reminder', ['ہر مہینے صفائی کی یاد دہانی', 'A nudge to clean once a month']) + '<div class="row"><div class="t"><b>' + tt('ٹریش خود خالی ہو', 'Trash auto-empty') + '</b></div></div>' + chipRow('trashDays', [[7, '7 دن', '7 days'], [30, '30 دن', '30 days'], [60, '60 دن', '60 days'], [90, '90 دن', '90 days']]) + '</div>' +
+      '<div class="card center"><div class="logo" style="margin:0 auto 8px;width:56px;height:56px;border-radius:17px;font-size:26px">✦</div><b style="font-size:19px;font-family:system-ui">Cleanova</b><div class="mut" style="font-family:system-ui;font-size:12.5px;line-height:1.8;margin-top:4px">Version 2.0 · ' + tt('مفت · اشتہارات نہیں', 'Free · No ads') + '<br>' + tt('سارا اسکین آپ کے فون میں ہی ہوتا ہے', 'All scanning stays on your phone') + '<br><span style="color:var(--acc);font-weight:700">Developed by SMAA</span></div></div>' +
+      '<div class="card"><div class="mut">' + tt('اب تک کل صفائی', 'Total cleaned so far') + '</div><div class="big">' + fmt(store('freed') || 0) + '</div></div>';
+    $('#body').innerHTML = h;
+    [].forEach.call(document.querySelectorAll('[data-pref]'), function (b) {
+      b.onclick = function () {
+        var k = b.dataset.pref, v = b.dataset.v; v = isNaN(+v) ? v : +v;
+        setPref(k, v); if (k === 'lang' || k === 'theme') applyLook(); if (k === 'trashDays') P.trashPurge({ days: v }).catch(function () { /* ignore */ });
+        var y = $('#body').scrollTop; render(); $('#body').scrollTop = y;
+      };
+    });
+    [].forEach.call(document.querySelectorAll('[data-sw]'), function (b) {
+      b.onclick = function () {
+        var k = b.dataset.sw, v = !PREF[k];
+        if (k === 'remind') return setReminder(v).then(function () { vSettings(); });
+        setPref(k, v); vSettings();
+      };
+    });
+    $('#protbtn').onclick = protectSheet;
+  }
+  function protectSheet() {
+    P.dirs().then(function (r) {
+      var m = $('#modal'); m.hidden = false;
+      var h = '<h2 style="font-size:21px">' + T('محفوظ فولڈرز', 'Protected folders') + '</h2><p class="mut">' + tt('چنے ہوئے فولڈرز کبھی اسکین یا صاف نہیں ہوں گے۔', 'Selected folders are never scanned or cleaned.') + '</p><div class="card" id="plist">';
+      (r.dirs || []).forEach(function (d) { h += '<button class="cat" data-d="' + esc(d.path) + '"><span class="sw" aria-pressed="' + (PREF.protect.indexOf(d.path) >= 0) + '"></span><span class="t" style="flex:1;font-family:system-ui;text-align:start">' + esc(d.name) + '</span></button>'; });
+      $('#sheet').innerHTML = h + '</div><button class="btn" id="pdone">' + T('ٹھیک ہے', 'Done') + '</button>';
+      $('#plist').onclick = function (e) {
+        var b = e.target.closest('[data-d]'); if (!b) return; var p = b.dataset.d, i = PREF.protect.indexOf(p);
+        if (i >= 0) PREF.protect.splice(i, 1); else PREF.protect.push(p);
+        store('protect', PREF.protect); b.querySelector('.sw').setAttribute('aria-pressed', String(PREF.protect.indexOf(p) >= 0));
+      };
+      $('#pdone').onclick = function () { m.hidden = true; vSettings(); };
+    }).catch(function () { toast('فولڈر نہیں مل سکے', 'Could not list folders'); });
+  }
+  function setReminder(on) {
+    if (!LN) { setPref('remind', on); toast(on ? 'یاد دہانی آن (صرف ایپ میں)' : 'یاد دہانی بند', on ? 'Reminder on (app only)' : 'Reminder off'); return Promise.resolve(); }
+    if (!on) { setPref('remind', false); return LN.cancel({ notifications: [{ id: 7001 }] }).catch(function () { /* ignore */ }); }
+    return LN.requestPermissions().then(function (r) {
+      if (!r || r.display !== 'granted') { toast('نوٹیفکیشن کی اجازت نہیں ملی', 'Notification permission denied'); return; }
+      return LN.schedule({ notifications: [{ id: 7001, title: 'Cleanova', body: 'مہینے کی صفائی کا وقت ہے · Time for a monthly clean-up', schedule: { on: { day: 1, hour: 10, minute: 0 }, allowWhileIdle: true } }] }).then(function () { setPref('remind', true); toast('ہر مہینے کی 1 تاریخ کو یاد دلاؤں گا', 'I will remind you on the 1st of each month'); });
+    }).catch(function () { toast('چالو نہیں ہو سکا', 'Could not turn on'); });
   }
 
   /* ---------- start ---------- */
@@ -321,15 +616,18 @@
       promise.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); });
     });
   }
+  var purged = false;
   function refreshStatus(quiet) {
     var call;
     try { call = withTimeout(P.status(), 5000); } catch (e) { call = Promise.reject(e); }
     return call.then(function (r) {
       S.granted = !!r.granted; S.free = r.free || 0; S.total = r.total || 0;
+      if (S.granted && !purged) { purged = true; P.trashPurge({ days: PREF.trashDays }).catch(function () { /* ignore */ }); }
       if (!quiet) { if (!S.granted) { S.view = 'gate'; } else if (S.view === 'gate') S.view = 'home'; render(); }
     }).catch(function (e) { S.view = 'gate'; render(); if (window.cleanovaDiag) window.cleanovaDiag('status failed: ' + (e && (e.message || e)) + '\nCapacitor: ' + typeof window.Capacitor + ', native: ' + (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) + ', plugin: ' + typeof P); });
   }
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && (S.view === 'gate')) refreshStatus(); });
-  window.cleanovaTest = { S: S, render: render, prepare: prepare, go: go };
+  window.cleanovaTest = { S: S, PREF: PREF, render: render, prepare: prepare, go: go };
+  applyLook();
   refreshStatus();
 })();

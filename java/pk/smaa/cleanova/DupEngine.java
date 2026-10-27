@@ -50,11 +50,17 @@ public class DupEngine {
     public static boolean isImage(String path) { return IMAGE_EXT.contains(ext(path)); }
 
     /* ---------- walk ---------- */
-    public static List<Item> walk(File root, Progress p) {
+    public static List<Item> walk(File root, Progress p) { return walk(root, p, null, null); }
+
+    /** skip: absolute folder paths never entered. emptyOut (optional): receives folders that contain nothing at all. */
+    public static List<Item> walk(File root, Progress p, List<String> skip, List<String> emptyOut) {
         List<Item> out = new ArrayList<Item>();
         ArrayList<File> stack = new ArrayList<File>();
         stack.add(root);
         Set<String> seenDirs = new HashSet<String>();
+        Set<String> skipSet = new HashSet<String>();
+        if (skip != null) skipSet.addAll(skip);
+        Set<String> keepRoot = new HashSet<String>(Arrays.asList("DCIM", "Download", "Pictures", "Movies", "Music", "Documents", "Alarms", "Notifications", "Ringtones", "Podcasts", "Audiobooks", "Recordings", "Android"));
         int dirs = 0;
         while (!stack.isEmpty()) {
             File d = stack.remove(stack.size() - 1);
@@ -64,12 +70,18 @@ public class DupEngine {
             } catch (IOException e) { continue; }
             File[] list = d.listFiles();
             if (list == null) continue;
+            if (list.length == 0 && emptyOut != null && !d.equals(root) && !(d.getParentFile() != null && d.getParentFile().equals(root) && keepRoot.contains(d.getName()))) emptyOut.add(d.getAbsolutePath());
             if ((++dirs & 63) == 0 && p != null) p.on("walk", out.size(), 0);
             for (File f : list) {
                 String n = f.getName();
                 if (n.startsWith(".")) continue;                       /* hidden files and folders, thumbnails, our own trash */
                 if (f.isDirectory()) {
-                    if (d.equals(root) && n.equals("Android")) continue; /* other apps' private data */
+                    if (skipSet.contains(f.getAbsolutePath())) continue;
+                    if (d.equals(root) && n.equals("Android")) {         /* other apps' private data; only Android/media (WhatsApp lives there on new phones) */
+                        File m = new File(f, "media");
+                        if (m.isDirectory() && !skipSet.contains(m.getAbsolutePath())) stack.add(m);
+                        continue;
+                    }
                     if (Files.isSymbolicLink(f.toPath())) continue;
                     stack.add(f);
                 } else if (f.isFile()) {
@@ -82,6 +94,47 @@ public class DupEngine {
         }
         if (p != null) p.on("walk", out.size(), out.size());
         return out;
+    }
+
+    /* ---------- extra lists: large files, WhatsApp, screenshots, junk, old downloads ---------- */
+    public static class Extras {
+        public List<Item> large = new ArrayList<Item>(), wa = new ArrayList<Item>(), shots = new ArrayList<Item>(),
+            junk = new ArrayList<Item>(), old = new ArrayList<Item>();
+        public List<String> junkReason = new ArrayList<String>();
+    }
+    private static final Set<String> TMP_EXT = new HashSet<String>(Arrays.asList("tmp", "temp", "bak", "crdownload", "part", "log", "old", "dmp"));
+    private static final Comparator<Item> BY_SIZE_DESC = new Comparator<Item>() {
+        public int compare(Item a, Item b) { return a.size == b.size ? 0 : (a.size < b.size ? 1 : -1); }
+    };
+    private static void cap(List<Item> l, int n) { Collections.sort(l, BY_SIZE_DESC); while (l.size() > n) l.remove(l.size() - 1); }
+
+    public static Extras extras(List<Item> items, String rootPath, long now) {
+        Extras x = new Extras();
+        String dl = (rootPath + "/Download/").toLowerCase();
+        for (Item it : items) {
+            String low = it.path.toLowerCase(), e = ext(low);
+            if (it.size >= 50L * 1024 * 1024) x.large.add(it);
+            boolean wa = (low.contains("/whatsapp/media/") || low.contains("/whatsapp business/media/")) && !low.contains("stickers") && !low.contains("profile photos") && !low.contains("/.statuses/");
+            if (wa && now - it.mtime > 14L * 86400000) x.wa.add(it);
+            if (low.contains("screenshot") && (e.equals("png") || e.equals("jpg") || e.equals("jpeg") || e.equals("webp"))) x.shots.add(it);
+            if (TMP_EXT.contains(e) || e.equals("apk")) { x.junk.add(it); }
+            if (low.startsWith(dl) && now - it.mtime > 30L * 86400000) x.old.add(it);
+        }
+        cap(x.large, 200); cap(x.wa, 8000); cap(x.shots, 5000); cap(x.junk, 3000); cap(x.old, 3000);
+        return x;
+    }
+
+    /** Variance of a 4-neighbour Laplacian over a grayscale image (low = blurry). */
+    public static double lapVar(int[] g, int w, int h) {
+        double sum = 0, sum2 = 0; int n = 0;
+        for (int y = 1; y < h - 1; y++) for (int x = 1; x < w - 1; x++) {
+            int c = g[y * w + x];
+            double l = 4 * c - g[y * w + x - 1] - g[y * w + x + 1] - g[(y - 1) * w + x] - g[(y + 1) * w + x];
+            sum += l; sum2 += l * l; n++;
+        }
+        if (n == 0) return 1e9;
+        double m = sum / n;
+        return sum2 / n - m * m;
     }
 
     /* ---------- exact copies ---------- */

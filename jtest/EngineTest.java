@@ -78,6 +78,32 @@ public class EngineTest {
     long freed = t.purge(null);
     check(freed > 0 && t.list().isEmpty(), "trash: empty frees " + freed + " bytes");
     check(t.purgeOlderThan(1000) == 0, "trash: purge older on empty trash is safe");
+    /* ---- v2: extras, skip, empty dirs, lapVar ---- */
+    Path r2p = Files.createTempDirectory("cl2"); File r2 = r2p.toFile();
+    for (String d : new String[]{"Download","DCIM/Camera","WhatsApp/Media/WhatsApp Images/Sent","Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video","Android/data/x","Emptyone","Keep/Inner","Pictures/Screenshots","Private"}) new File(r2, d).mkdirs();
+    long old = System.currentTimeMillis() - 200L*86400000;
+    File f1 = new File(r2, "Download/setup.apk"); Files.write(f1.toPath(), rnd(5000,9)); f1.setLastModified(old);
+    File f2 = new File(r2, "WhatsApp/Media/WhatsApp Images/Sent/a.jpg"); Files.write(f2.toPath(), rnd(5000,10)); f2.setLastModified(old);
+    File f3 = new File(r2, "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/v.mp4"); Files.write(f3.toPath(), rnd(6000,11)); f3.setLastModified(old);
+    Files.write(new File(r2, "Android/data/x/s.bin").toPath(), rnd(5000,12));
+    Files.write(new File(r2, "Pictures/Screenshots/Screenshot_1.png").toPath(), rnd(5000,13));
+    Files.write(new File(r2, "Private/p.bin").toPath(), rnd(5000,14));
+    Files.write(new File(r2, "DCIM/Camera/x.tmp").toPath(), rnd(5000,15));
+    Files.write(new File(r2, "Download/big.bin").toPath(), new byte[0]);
+    List<String> empt = new ArrayList<String>();
+    List<Item> it2 = DupEngine.walk(r2, null, Arrays.asList(new File(r2, "Private").getAbsolutePath()), empt);
+    Set<String> nm = new HashSet<String>(); for (Item i : it2) nm.add(new File(i.path).getName());
+    check(nm.contains("v.mp4") && !nm.contains("s.bin") && !nm.contains("p.bin"), "walk: Android/media included, Android/data and protected folder skipped");
+    boolean hasEmpty = false, hasKeep = false; for (String e : empt) { if (e.endsWith("Emptyone")) hasEmpty = true; if (e.endsWith("DCIM") || e.endsWith("Download")) hasKeep = true; }
+    check(hasEmpty && !hasKeep && empt.contains(new File(r2,"Keep/Inner").getAbsolutePath()), "empty folders found, standard folders never flagged");
+    DupEngine.Extras xx = DupEngine.extras(it2, r2.getAbsolutePath(), System.currentTimeMillis());
+    check(xx.wa.size() == 2, "whatsapp old media found (both locations): " + xx.wa.size());
+    check(xx.shots.size() == 1, "screenshots found");
+    check(xx.junk.size() == 2, "junk: apk + tmp -> " + xx.junk.size());
+    check(xx.old.size() == 1, "old downloads (>30d) found");
+    int[] sharp = new int[64*64], flat = new int[64*64];
+    for (int i = 0; i < sharp.length; i++) { sharp[i] = ((i % 64) / 4 + (i / 64) / 4) % 2 * 200; flat[i] = 100 + (i % 64) / 16; }
+    check(DupEngine.lapVar(sharp,64,64) > 1000 && DupEngine.lapVar(flat,64,64) < 25, "lapVar: sharp high, smooth low");
     System.out.println("ALL OK");
   }
 }

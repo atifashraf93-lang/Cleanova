@@ -51,15 +51,6 @@ public class CleanovaPlugin extends Plugin {
         return getPermissionState("storage") == PermissionState.GRANTED;
     }
 
-    @Override
-    public void load() {
-        new Thread(new Runnable() {
-            public void run() {
-                try { if (hasAccess()) trash().purgeOlderThan(TRASH_DAYS_MS); } catch (Throwable t) { /* ignore */ }
-            }
-        }).start();
-    }
-
     @PluginMethod
     public void status(PluginCall call) {
         JSObject r = new JSObject();
@@ -152,6 +143,8 @@ public class CleanovaPlugin extends Plugin {
         if (!hasAccess()) { call.reject("no access"); return; }
         if (scanning) { call.reject("busy"); return; }
         final boolean wantSimilar = call.getBoolean("similar", true);
+        final boolean wantQuality = call.getBoolean("quality", true);
+        final List<String> skip = strings(call.getArray("skip"));
         scanning = true;
         new Thread(new Runnable() {
             public void run() {
@@ -159,7 +152,8 @@ public class CleanovaPlugin extends Plugin {
                     DupEngine.Progress p = new DupEngine.Progress() {
                         public void on(String phase, int done, int total) { progress(phase, done, total); }
                     };
-                    List<Item> items = DupEngine.walk(root(), p);
+                    List<String> emptyDirs = new ArrayList<String>();
+                    List<Item> items = DupEngine.walk(root(), p, skip, emptyDirs);
                     List<Group> exact = DupEngine.exact(items, p);
                     List<Group> sim = new ArrayList<Group>();
                     if (wantSimilar) {
@@ -177,18 +171,144 @@ public class CleanovaPlugin extends Plugin {
                             public long dhash(File f) { return CleanovaPlugin.dhash(f); }
                         }, 6, p);
                     }
+                    DupEngine.Extras ex = DupEngine.extras(items, root().getAbsolutePath(), System.currentTimeMillis());
+                    JSArray blurry = wantQuality ? quality(items, p) : new JSArray();
+                    JSObject extras = new JSObject();
+                    extras.put("large", itemsJson(ex.large));
+                    extras.put("wa", itemsJson(ex.wa));
+                    extras.put("shots", itemsJson(ex.shots));
+                    extras.put("junk", itemsJson(ex.junk));
+                    extras.put("old", itemsJson(ex.old));
+                    extras.put("blurry", blurry);
+                    JSArray ed = new JSArray();
+                    for (int i = 0; i < emptyDirs.size() && i < 500; i++) ed.put(emptyDirs.get(i));
+                    extras.put("empty", ed);
                     JSArray groups = new JSArray();
                     for (Group g : exact) groups.put(groupJson(g));
                     for (Group g : sim) groups.put(groupJson(g));
                     JSObject res = new JSObject();
                     res.put("groups", groups);
                     res.put("files", items.size());
+                    res.put("extras", extras);
                     scanning = false;
                     call.resolve(res);
                 } catch (Throwable t) {
                     scanning = false;
                     call.reject("scan failed: " + t);
                 }
+            }
+        }).start();
+    }
+
+    private JSArray itemsJson(List<Item> l) {
+        JSArray arr = new JSArray();
+        for (Item it : l) {
+            JSObject i = new JSObject();
+            i.put("path", it.path);
+            i.put("size", it.size);
+            i.put("mtime", it.mtime);
+            arr.put(i);
+        }
+        return arr;
+    }
+
+    /** Looks at recent camera photos and returns the blurriest or darkest ones (the user reviews each). */
+    private JSArray quality(List<Item> items, DupEngine.Progress p) {
+        List<Item> c = new ArrayList<Item>();
+        for (Item it : items) {
+            String low = it.path.toLowerCase();
+            if (DupEngine.isImage(it.path) && it.size >= 60 * 1024 && (low.contains("/dcim/") || low.contains("/pictures/")) && !low.contains("screenshot")) c.add(it);
+        }
+        java.util.Collections.sort(c, new java.util.Comparator<Item>() {
+            public int compare(Item a, Item b) { return a.mtime == b.mtime ? 0 : (a.mtime < b.mtime ? 1 : -1); }
+        });
+        int n = Math.min(c.size(), 1500);
+        List<Object[]> bad = new ArrayList<Object[]>();
+        for (int i = 0; i < n; i++) {
+            if ((i & 15) == 0) p.on("quality", i, n);
+            Item it = c.get(i);
+            try {
+                BitmapFactory.Options o = new BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                BitmapFactory.decodeFile(it.path, o);
+                if (o.outWidth <= 0) continue;
+                int sample = 1;
+                while (o.outWidth / (sample * 2) >= 128 && o.outHeight / (sample * 2) >= 128) sample *= 2;
+                o.inJustDecodeBounds = false;
+                o.inSampleSize = sample;
+                Bitmap b = BitmapFactory.decodeFile(it.path, o);
+                if (b == null) continue;
+                Bitmap s = Bitmap.createScaledBitmap(b, 128, 128, true);
+                int[] g = new int[128 * 128];
+                long sum = 0;
+                for (int y = 0; y < 128; y++) for (int x = 0; x < 128; x++) {
+                    int px = s.getPixel(x, y);
+                    int v = (((px >> 16) & 255) * 30 + ((px >> 8) & 255) * 59 + (px & 255) * 11) / 100;
+                    g[y * 128 + x] = v; sum += v;
+                }
+                if (s != b) s.recycle();
+                b.recycle();
+                double mean = sum / (128.0 * 128.0), lv = DupEngine.lapVar(g, 128, 128);
+                if (mean < 30) bad.add(new Object[] { it, "dark", mean });
+                else if (lv < 25) bad.add(new Object[] { it, "blur", lv * 4 });
+            } catch (Throwable t) { /* skip this photo */ }
+        }
+        java.util.Collections.sort(bad, new java.util.Comparator<Object[]>() {
+            public int compare(Object[] a, Object[] b) { return Double.compare((Double) a[2], (Double) b[2]); }
+        });
+        JSArray out = new JSArray();
+        for (int i = 0; i < bad.size() && i < 200; i++) {
+            Item it = (Item) bad.get(i)[0];
+            JSObject o = new JSObject();
+            o.put("path", it.path); o.put("size", it.size); o.put("mtime", it.mtime); o.put("reason", (String) bad.get(i)[1]);
+            out.put(o);
+        }
+        p.on("quality", n, n);
+        return out;
+    }
+
+    @PluginMethod
+    public void dirs(PluginCall call) {
+        JSArray arr = new JSArray();
+        File[] l = root().listFiles();
+        if (l != null) {
+            java.util.Arrays.sort(l);
+            for (File f : l) {
+                String n = f.getName();
+                if (f.isDirectory() && !n.startsWith(".") && !n.equals("Android")) { JSObject o = new JSObject(); o.put("name", n); o.put("path", f.getAbsolutePath()); arr.put(o); }
+            }
+        }
+        JSObject r = new JSObject();
+        r.put("dirs", arr);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void deleteEmptyDirs(final PluginCall call) {
+        if (!hasAccess()) { call.reject("no access"); return; }
+        final List<String> paths = strings(call.getArray("paths"));
+        new Thread(new Runnable() {
+            public void run() {
+                int n = 0;
+                for (String p : paths) {
+                    File f = new File(p);
+                    String[] kids = f.list();
+                    if (f.isDirectory() && kids != null && kids.length == 0 && f.delete()) n++; /* only truly empty folders */
+                }
+                JSObject r = new JSObject();
+                r.put("deleted", n);
+                call.resolve(r);
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void trashPurge(final PluginCall call) {
+        final long days = call.getInt("days", 30);
+        new Thread(new Runnable() {
+            public void run() {
+                try { if (hasAccess() && days > 0) trash().purgeOlderThan(days * 86400000L); } catch (Throwable t) { /* ignore */ }
+                call.resolve();
             }
         }).start();
     }
