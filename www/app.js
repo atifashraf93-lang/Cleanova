@@ -3,11 +3,13 @@
   'use strict';
 
   var Cap = window.Capacitor;
-  var P;
-  try { P = (Cap && Cap.registerPlugin && !window.CLEANOVA_MOCK) ? Cap.registerPlugin('Cleanova') : window.CleanovaMock; } catch (e) { if (window.cleanovaDiag) window.cleanovaDiag('registerPlugin failed: ' + e.message); }
-  if (!P) P = new Proxy({}, { get: function () { return function () { return Promise.reject(new Error('plugin missing')); }; } });
-  var AppPlugin = null;
-  try { AppPlugin = Cap && Cap.registerPlugin ? Cap.registerPlugin('App') : null; } catch (e) { AppPlugin = null; }
+  var PL = (Cap && Cap.Plugins) || {};
+  var P = (!window.CLEANOVA_MOCK && PL.Cleanova) ? PL.Cleanova : window.CleanovaMock;
+  if (!P) {
+    if (window.cleanovaDiag) window.cleanovaDiag('native plugin not found. Plugins: ' + Object.keys(PL).join(', '));
+    P = new Proxy({}, { get: function () { return function () { return Promise.reject(new Error('plugin missing')); }; } });
+  }
+  var AppPlugin = (!window.CLEANOVA_MOCK && PL.App) ? PL.App : null;
 
   function $(s) { return document.querySelector(s); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -170,15 +172,18 @@
   function startScan() {
     S.view = 'scanning'; S.back = []; S.prog = { phase: 'walk', done: 0, total: 0 }; render();
     var h;
-    P.addListener('progress', function (e) {
-      S.prog = e; var now = Date.now();
-      if (S.view === 'scanning' && now - scanTick > 250) { scanTick = now; vScan(); }
-    }).then(function (x) { h = x; });
+    try {
+      var lr = P.addListener('progress', function (e) {
+        S.prog = e; var now = Date.now();
+        if (S.view === 'scanning' && now - scanTick > 250) { scanTick = now; vScan(); }
+      });
+      if (lr && lr.then) lr.then(function (x) { h = x; }); else h = lr;
+    } catch (e) { /* progress is optional */ }
     P.scan({ similar: S.similar }).then(function (r) {
-      if (h && h.remove) h.remove();
+      try { if (h && h.remove) h.remove(); } catch (e) { /* ignore */ }
       prepare(r.groups || []); S.scanned = r.files || 0; S.view = 'results'; S.back = [{ view: 'home' }]; render();
     }).catch(function (e) {
-      if (h && h.remove) h.remove();
+      try { if (h && h.remove) h.remove(); } catch (e) { /* ignore */ }
       S.view = 'home'; render(); toast('اسکین نہیں ہو سکا', 'Scan failed: ' + (e && e.message || e));
     });
   }
