@@ -507,4 +507,14 @@ public class MonitorPlugin extends Plugin {
             call.resolve();
         } catch (Throwable t) { call.reject("cannot open uninstall: " + t); }
     }
+
+    @PluginMethod
+    public void appInfoOpen(PluginCall call) {
+        try {
+            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx().getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx().startActivity(i);
+            call.resolve();
+        } catch (Throwable t) { call.reject("cannot open: " + t); }
+    }
 }

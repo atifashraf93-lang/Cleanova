@@ -73,6 +73,7 @@
       monitorSet: function (o) { for (var k in o) ms[k] = o[k]; return Promise.resolve(); },
       monitorStart: function () { ms.on = true; return Promise.resolve(); },
       monitorStop: function () { ms.on = false; return Promise.resolve(); },
+      appInfoOpen: function () { return Promise.resolve(); },
       batteryOptOpen: function () { return Promise.resolve(); },
       history: function () { var pts = [], now = Date.now(); for (var i = 0; i < 120; i++) pts.push({ t: now - (120 - i) * 3600000 * 1.4, l: Math.round(50 + 40 * Math.sin(i / 7)), tp: 33, c: Math.sin(i / 7) > 0.6 ? 1 : 0 }); return Promise.resolve({ points: pts }); },
       unusedApps: function () { return Promise.resolve({ count: 2, apps: [{ pkg: 'com.old.game', label: 'Old Game', idleDays: 140, size: 180 * MBn, icon: ic('#a55') }, { pkg: 'com.x.scanner', label: 'PDF Scanner', idleDays: 9999, size: 42 * MBn, icon: ic('#58a') }] }); },
