@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -136,6 +137,69 @@ public class DupEngine {
         double m = sum / n;
         return sum2 / n - m * m;
     }
+
+
+    /* ---------- duplicate contacts ---------- */
+    public static class ContactRec {
+        public long id; public String name; public List<String> numbers = new ArrayList<String>();
+        public ContactRec(long id, String name) { this.id = id; this.name = name == null ? "" : name; }
+    }
+    public static class ContactGroup {
+        public String reason; /* number | name */
+        public List<ContactRec> contacts = new ArrayList<ContactRec>();
+    }
+    /** Digits only; the last 10 digits identify a number whether it is written 0300..., +92300... or 0092300.... Too-short numbers are ignored. */
+    public static String normNumber(String n) {
+        if (n == null) return "";
+        StringBuilder d = new StringBuilder();
+        for (int i = 0; i < n.length(); i++) { char c = n.charAt(i); if (c >= '0' && c <= '9') d.append(c); }
+        String x = d.toString();
+        if (x.length() < 7) return "";
+        return x.length() > 10 ? x.substring(x.length() - 10) : x;
+    }
+    public static String normName(String n) { return n == null ? "" : n.trim().toLowerCase().replaceAll("\\s+", " "); }
+
+    public static List<ContactGroup> contactGroups(List<ContactRec> all) {
+        int n = all.size();
+        int[] p = new int[n];
+        for (int i = 0; i < n; i++) p[i] = i;
+        Map<String, Integer> byNum = new HashMap<String, Integer>(), byName = new HashMap<String, Integer>();
+        boolean[] numLinked = new boolean[n];
+        List<int[]> numEdges = new ArrayList<int[]>();
+        for (int i = 0; i < n; i++) {
+            ContactRec c = all.get(i);
+            for (String raw : c.numbers) {
+                String k = normNumber(raw); if (k.isEmpty()) continue;
+                Integer j = byNum.get(k);
+                if (j == null) byNum.put(k, i); else if (j != i) { union(p, i, j); numEdges.add(new int[] { i, j }); }
+            }
+        }
+        for (int[] e : numEdges) { numLinked[e[0]] = true; numLinked[e[1]] = true; }
+        for (int i = 0; i < n; i++) {
+            String k = normName(all.get(i).name);
+            if (k.length() < 2) continue;
+            Integer j = byName.get(k);
+            if (j == null) byName.put(k, i); else union(p, i, j);
+        }
+        Map<Integer, ContactGroup> gs = new LinkedHashMap<Integer, ContactGroup>();
+        for (int i = 0; i < n; i++) {
+            int r = find(p, i);
+            ContactGroup g = gs.get(r);
+            if (g == null) { g = new ContactGroup(); g.reason = "name"; gs.put(r, g); }
+            g.contacts.add(all.get(i));
+            if (numLinked[i]) g.reason = "number";
+        }
+        List<ContactGroup> out = new ArrayList<ContactGroup>();
+        for (ContactGroup g : gs.values()) {
+            if (g.contacts.size() < 2) continue;
+            Collections.sort(g.contacts, new Comparator<ContactRec>() {
+                public int compare(ContactRec a, ContactRec b) { return b.numbers.size() - a.numbers.size(); }
+            });
+            out.add(g);
+        }
+        return out;
+    }
+    private static void union(int[] p, int a, int b) { int ra = find(p, a), rb = find(p, b); if (ra != rb) p[ra] = rb; }
 
     /* ---------- exact copies ---------- */
     private static String hex(byte[] b) {

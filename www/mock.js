@@ -3,7 +3,12 @@
   if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && location.search.indexOf('mock') < 0) return;
   if (location.search.indexOf('mock') >= 0) window.CLEANOVA_MOCK = true;
   var granted = location.search.indexOf('nogrant') < 0;
-  var trash = [], listeners = {};
+  var trash = [], listeners = {}, cgranted = location.search.indexOf('nocontacts') < 0;
+  var cgroups = [
+    { reason: 'number', contacts: [{ id: 11, name: 'Ali Khan', numbers: ['0300 1234567', '0321 7654321'] }, { id: 12, name: 'Ali Khan', numbers: ['+92 300 1234567'] }] },
+    { reason: 'number', contacts: [{ id: 21, name: 'Ammi', numbers: ['0333 1112223'] }, { id: 22, name: 'Mama Jan', numbers: ['0333-1112223'] }, { id: 23, name: 'Ammi (Home)', numbers: ['03331112223'] }] },
+    { reason: 'name', contacts: [{ id: 31, name: 'Ahmed', numbers: ['0345 9998887'] }, { id: 32, name: 'Ahmed', numbers: ['0312 4445556'] }] }
+  ];
   function mk(path, size, days) { return { path: path, size: size, mtime: Date.now() - days * 86400000 }; }
   var R = '/storage/emulated/0/';
   var groups = [
@@ -42,6 +47,12 @@
       });
     },
     thumbnail: function (o) { return Promise.resolve({ data: /\.(jpg|png|mp4|jpeg)$/i.test(o.path) ? thumb(o.path) : '' }); },
+    contactsStatus: function () { return Promise.resolve({ granted: cgranted }); },
+    contactsRequest: function () { cgranted = true; return Promise.resolve({ granted: true }); },
+    contactsScan: function () { return Promise.resolve({ total: 412, groups: JSON.parse(JSON.stringify(cgroups)) }); },
+    contactsBackup: function () { return Promise.resolve({ path: R + 'Cleanova/contacts-backup-20261028-153000.vcf', count: 412 }); },
+    contactsMerge: function (o) { return Promise.resolve({ merged: o.groups.length }); },
+    contactsDelete: function (o) { return Promise.resolve({ deleted: o.ids.length }); },
     dirs: function () { return Promise.resolve({ dirs: ['DCIM', 'Documents', 'Download', 'Movies', 'Music', 'Pictures', 'WhatsApp'].map(function (n) { return { name: n, path: R + n }; }) }); },
     deleteEmptyDirs: function (o) { return Promise.resolve({ deleted: o.paths.length }); },
     trashPurge: function () { return Promise.resolve(); },

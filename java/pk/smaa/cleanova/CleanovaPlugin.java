@@ -1,7 +1,13 @@
 package pk.smaa.cleanova;
 
 import android.Manifest;
+import android.content.ContentResolver;
+import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.Intent;
+import android.content.res.AssetFileDescriptor;
+import android.database.Cursor;
+import android.provider.ContactsContract;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.MediaMetadataRetriever;
@@ -25,6 +31,10 @@ import com.getcapacitor.annotation.PermissionCallback;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,7 +45,8 @@ import pk.smaa.cleanova.DupEngine.TrashRec;
 @CapacitorPlugin(
     name = "Cleanova",
     permissions = {
-        @Permission(strings = { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE }, alias = "storage")
+        @Permission(strings = { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE }, alias = "storage"),
+        @Permission(strings = { Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS }, alias = "contacts")
     }
 )
 public class CleanovaPlugin extends Plugin {
@@ -458,6 +469,178 @@ public class CleanovaPlugin extends Plugin {
                     res.put("freed", freed);
                     call.resolve(res);
                 } catch (Throwable t) { call.reject("empty failed: " + t); }
+            }
+        }).start();
+    }
+
+    /* ---------- duplicate contacts ---------- */
+    private boolean hasContacts() { return getPermissionState("contacts") == PermissionState.GRANTED; }
+
+    @PluginMethod
+    public void contactsStatus(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("granted", hasContacts());
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void contactsRequest(PluginCall call) {
+        if (hasContacts()) { JSObject r = new JSObject(); r.put("granted", true); call.resolve(r); return; }
+        requestPermissionForAlias("contacts", call, "contactsPermCb");
+    }
+
+    @PermissionCallback
+    private void contactsPermCb(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("granted", hasContacts());
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void contactsScan(final PluginCall call) {
+        if (!hasContacts()) { call.reject("no contacts access"); return; }
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    ContentResolver cr = getContext().getContentResolver();
+                    java.util.LinkedHashMap<Long, DupEngine.ContactRec> map = new java.util.LinkedHashMap<Long, DupEngine.ContactRec>();
+                    Cursor c = cr.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                        new String[] { ContactsContract.CommonDataKinds.Phone.CONTACT_ID, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER }, null, null, null);
+                    if (c != null) {
+                        try {
+                            while (c.moveToNext()) {
+                                long id = c.getLong(0);
+                                DupEngine.ContactRec r = map.get(id);
+                                if (r == null) { r = new DupEngine.ContactRec(id, c.getString(1)); map.put(id, r); }
+                                String n = c.getString(2);
+                                if (n != null) r.numbers.add(n);
+                            }
+                        } finally { c.close(); }
+                    }
+                    List<DupEngine.ContactGroup> gs = DupEngine.contactGroups(new ArrayList<DupEngine.ContactRec>(map.values()));
+                    JSArray arr = new JSArray();
+                    for (DupEngine.ContactGroup g : gs) {
+                        JSObject o = new JSObject();
+                        o.put("reason", g.reason);
+                        JSArray cs = new JSArray();
+                        for (DupEngine.ContactRec r : g.contacts) {
+                            JSObject co = new JSObject();
+                            co.put("id", r.id);
+                            co.put("name", r.name);
+                            JSArray ns = new JSArray();
+                            for (String n : r.numbers) ns.put(n);
+                            co.put("numbers", ns);
+                            cs.put(co);
+                        }
+                        o.put("contacts", cs);
+                        arr.put(o);
+                    }
+                    JSObject res = new JSObject();
+                    res.put("groups", arr);
+                    res.put("total", map.size());
+                    call.resolve(res);
+                } catch (Throwable t) { call.reject("contacts scan failed: " + t); }
+            }
+        }).start();
+    }
+
+    /** Saves every contact into one .vcf file before anything is changed. */
+    @PluginMethod
+    public void contactsBackup(final PluginCall call) {
+        if (!hasContacts()) { call.reject("no contacts access"); return; }
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    ContentResolver cr = getContext().getContentResolver();
+                    File dir = new File(root(), "Cleanova");
+                    dir.mkdirs();
+                    String ts = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date());
+                    File out = new File(dir, "contacts-backup-" + ts + ".vcf");
+                    int count = 0;
+                    Cursor c = cr.query(ContactsContract.Contacts.CONTENT_URI, new String[] { ContactsContract.Contacts.LOOKUP_KEY }, null, null, null);
+                    OutputStream os = new FileOutputStream(out);
+                    try {
+                        if (c != null) {
+                            while (c.moveToNext()) {
+                                String key = c.getString(0);
+                                if (key == null) continue;
+                                try {
+                                    AssetFileDescriptor fd = cr.openAssetFileDescriptor(Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_VCARD_URI, key), "r");
+                                    if (fd == null) continue;
+                                    InputStream in = fd.createInputStream();
+                                    byte[] buf = new byte[8192];
+                                    int n;
+                                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                                    in.close();
+                                    fd.close();
+                                    count++;
+                                } catch (Throwable t) { /* skip one unreadable contact */ }
+                            }
+                        }
+                    } finally { os.close(); if (c != null) c.close(); }
+                    if (count == 0) { out.delete(); call.reject("no contacts to back up"); return; }
+                    rescan(java.util.Collections.singletonList(out.getAbsolutePath()));
+                    JSObject res = new JSObject();
+                    res.put("path", out.getAbsolutePath());
+                    res.put("count", count);
+                    call.resolve(res);
+                } catch (Throwable t) { call.reject("backup failed: " + t); }
+            }
+        }).start();
+    }
+
+    /** Joins contacts into one without deleting any number (same thing the Contacts app does for "Merge"). */
+    @PluginMethod
+    public void contactsMerge(final PluginCall call) {
+        if (!hasContacts()) { call.reject("no contacts access"); return; }
+        final JSArray groups = call.getArray("groups");
+        if (groups == null) { call.reject("no groups"); return; }
+        new Thread(new Runnable() {
+            public void run() {
+                int merged = 0;
+                try {
+                    ContentResolver cr = getContext().getContentResolver();
+                    for (int g = 0; g < groups.length(); g++) {
+                        org.json.JSONArray ids = groups.getJSONArray(g);
+                        List<Long> raws = new ArrayList<Long>();
+                        for (int i = 0; i < ids.length(); i++) {
+                            Cursor c = cr.query(ContactsContract.RawContacts.CONTENT_URI, new String[] { ContactsContract.RawContacts._ID }, ContactsContract.RawContacts.CONTACT_ID + "=?", new String[] { String.valueOf(ids.getLong(i)) }, null);
+                            if (c != null) { try { while (c.moveToNext()) raws.add(c.getLong(0)); } finally { c.close(); } }
+                        }
+                        for (int i = 1; i < raws.size(); i++) {
+                            ContentValues v = new ContentValues();
+                            v.put(ContactsContract.AggregationExceptions.TYPE, ContactsContract.AggregationExceptions.TYPE_KEEP_TOGETHER);
+                            v.put(ContactsContract.AggregationExceptions.RAW_CONTACT_ID1, raws.get(0));
+                            v.put(ContactsContract.AggregationExceptions.RAW_CONTACT_ID2, raws.get(i));
+                            cr.update(ContactsContract.AggregationExceptions.CONTENT_URI, v, null, null);
+                        }
+                        if (raws.size() > 1) merged++;
+                    }
+                    JSObject res = new JSObject();
+                    res.put("merged", merged);
+                    call.resolve(res);
+                } catch (Throwable t) { call.reject("merge failed: " + t); }
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void contactsDelete(final PluginCall call) {
+        if (!hasContacts()) { call.reject("no contacts access"); return; }
+        final JSArray ids = call.getArray("ids");
+        if (ids == null) { call.reject("no ids"); return; }
+        new Thread(new Runnable() {
+            public void run() {
+                int n = 0;
+                try {
+                    ContentResolver cr = getContext().getContentResolver();
+                    for (int i = 0; i < ids.length(); i++) {
+                        try { n += cr.delete(ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, ids.getLong(i)), null, null) > 0 ? 1 : 0; } catch (Throwable t) { /* skip one */ }
+                    }
+                    JSObject res = new JSObject();
+                    res.put("deleted", n);
+                    call.resolve(res);
+                } catch (Throwable t) { call.reject("delete failed: " + t); }
             }
         }).start();
     }

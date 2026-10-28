@@ -212,7 +212,7 @@
     { id: 'home', ic: '🏠', ur: 'ہوم', en: 'Home' }, { id: 'overview', ic: '📊', ur: 'نتیجہ', en: 'Results' },
     { id: 'trash', ic: '🗑', ur: 'ٹریش', en: 'Trash' }, { id: 'settings', ic: '⚙', ur: 'ترتیبات', en: 'Settings' }
   ];
-  var TAB_OF = { home: 'home', overview: 'overview', dups: 'overview', review: 'overview', list: 'overview', wa: 'overview', trash: 'trash', settings: 'settings', done: 'home' };
+  var TAB_OF = { home: 'home', overview: 'overview', dups: 'overview', review: 'overview', list: 'overview', wa: 'overview', trash: 'trash', settings: 'settings', done: 'home', contacts: 'home' };
   function go(view, extra) { S.back.push({ view: S.view, review: S.review, list: S.list }); S.view = view; if (extra !== undefined) { if (view === 'review') S.review = extra; else S.list = extra; } S.limit = 150; render(); }
   function goBack() {
     if (!$('#modal').hidden) { $('#modal').hidden = true; return true; }
@@ -242,7 +242,8 @@
     [].forEach.call(n.querySelectorAll('[data-tab]'), function (b) {
       b.onclick = function () {
         var id = b.dataset.tab; S.back = [];
-        if (id === 'trash') { loadTrash().then(function () { S.view = 'trash'; render(); }); return; }
+        if (id === 'contacts') { S.ct = { st: 'init', groups: [], sel: {}, act: 'merge' }; go('contacts'); return; }
+    if (id === 'trash') { loadTrash().then(function () { S.view = 'trash'; render(); }); return; }
         S.view = id; render();
       };
     });
@@ -256,7 +257,7 @@
   function footer() { return '<div class="foot">' + tt('سب کچھ آپ کے فون میں ہوتا ہے، کچھ اپلوڈ نہیں ہوتا۔', 'Everything stays on your phone. Nothing is uploaded.') + '<br>Developed by <b>SMAA</b></div>'; }
 
   function render() {
-    var fn = { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone }[S.view] || vHome;
+    var fn = { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone, contacts: vContacts }[S.view] || vHome;
     $('#body').scrollTop = 0;
     $('#body').onclick = null;
     setNav(S.view !== 'gate' && S.view !== 'scanning');
@@ -288,6 +289,7 @@
     return '<button class="tool" data-open="' + id + '"><div class="ic">' + ic + '</div>' + (size ? '<span class="sz">' + size + '</span>' : '') + '<b>' + (PREF.lang === 'en' ? en : ur) + '</b><small class="e" style="display:block">' + cap + '</small></button>';
   }
   function openTool(id) {
+    if (id === 'contacts') { S.ct = { st: 'init', groups: [], sel: {}, act: 'merge' }; go('contacts'); return; }
     if (id === 'trash') { loadTrash().then(function () { S.back = []; go('trash'); }); return; }
     if (!S.scanned) { go(id === 'dups' ? 'dups' : (id === 'wa' ? 'wa' : 'list'), id === 'dups' || id === 'wa' ? undefined : id); return; }
     if (id === 'dups') go('dups'); else if (id === 'wa') go('wa'); else go('list', id);
@@ -301,7 +303,7 @@
     var sz = function (b) { return S.scanned && b ? fmt(b) : ''; };
     var sub = {
       dups: ['ایک جیسی اور ملتی جلتی', 'Exact and similar'], large: ['سب سے بڑی پہلے', 'Biggest first'], wa: ['پرانا میڈیا', 'Old media'], shots: ['عمر کے لحاظ سے', 'By age'],
-      blurry: ['خود دیکھ کر چنیں', 'Review each'], junk: ['خالی فولڈر، APK', 'Empty folders, APKs'], old: ['Download کی پرانی فائلیں', 'Old downloads folder'], trash: ['واپس لانے کے لیے', 'Undo and restore']
+      blurry: ['خود دیکھ کر چنیں', 'Review each'], junk: ['خالی فولڈر، APK', 'Empty folders, APKs'], old: ['Download کی پرانی فائلیں', 'Old downloads folder'], trash: ['واپس لانے کے لیے', 'Undo and restore'], contacts: ['ایک جیسے نمبر والے', 'Same numbers or names']
     };
     $('#body').innerHTML = hero +
       '<button class="btn" id="scanbtn">' + T('فون اسکین کریں', 'Scan my phone') + '<small class="e">' + tt('ڈپلیکیٹ، کچرا اور بڑی فائلیں ڈھونڈیں', 'Finds duplicates, junk and big files') + '</small></button>' +
@@ -313,6 +315,7 @@
       tile('blurry', '🌫', 'دھندلی تصاویر', 'Blurry photos', sub.blurry, sz(sumItems(S.x.blurry))) +
       tile('junk', '🧹', 'فالتو فائلیں', 'Junk files', sub.junk, sz(sumItems(S.x.junk))) +
       tile('old', '📥', 'پرانی ڈاؤن لوڈز', 'Old downloads', sub.old, sz(sumItems(S.x.old.filter(function (i) { return older(i, 30); })))) +
+      tile('contacts', '👥', 'ڈپلیکیٹ کانٹیکٹس', 'Duplicate contacts', sub.contacts, '') +
       tile('trash', '♻', 'ٹریش', 'Trash', sub.trash, '') + '</div>' + footer();
     $('#scanbtn').onclick = startScan;
     [].forEach.call(document.querySelectorAll('[data-open]'), function (b) { b.onclick = function () { openTool(b.dataset.open); }; });
@@ -607,6 +610,82 @@
       if (!r || r.display !== 'granted') { toast('نوٹیفکیشن کی اجازت نہیں ملی', 'Notification permission denied'); return; }
       return LN.schedule({ notifications: [{ id: 7001, title: 'Cleanova', body: 'مہینے کی صفائی کا وقت ہے · Time for a monthly clean-up', schedule: { on: { day: 1, hour: 10, minute: 0 }, allowWhileIdle: true } }] }).then(function () { setPref('remind', true); toast('ہر مہینے کی 1 تاریخ کو یاد دلاؤں گا', 'I will remind you on the 1st of each month'); });
     }).catch(function () { toast('چالو نہیں ہو سکا', 'Could not turn on'); });
+  }
+
+  /* ---------- duplicate contacts (merge by default, always backed up first) ---------- */
+  function vContacts() {
+    setTop(T('ڈپلیکیٹ کانٹیکٹس', 'Duplicate contacts')); setBottom('');
+    var c = S.ct = S.ct || { st: 'init', groups: [], sel: {}, act: 'merge' };
+    if (c.st === 'init') {
+      c.st = 'checking'; P.contactsStatus().then(function (r) { c.st = r && r.granted ? 'ready' : 'need'; if (S.view === 'contacts') vContacts(); }).catch(function () { c.st = 'need'; if (S.view === 'contacts') vContacts(); });
+      $('#body').innerHTML = '<div class="card center"><div class="spin"></div></div>'; return;
+    }
+    if (c.st === 'checking' || c.st === 'working') { $('#body').innerHTML = '<div class="card center"><div class="spin"></div><h2 style="font-size:19px">' + T(c.st === 'working' ? 'کام جاری ہے…' : 'دیکھ رہا ہوں…', c.st === 'working' ? 'Working…' : 'Checking…') + '</h2></div>'; return; }
+    if (c.st === 'need') {
+      $('#body').innerHTML = '<div class="card center"><div style="font-size:50px">👥</div><h2 style="font-size:21px">' + T('کانٹیکٹس کی اجازت', 'Contacts permission') + '</h2><p class="mut" style="margin-top:8px">' + tt('ڈپلیکیٹ کانٹیکٹس ڈھونڈنے اور جوڑنے کے لیے کانٹیکٹس پڑھنے اور بدلنے کی اجازت چاہیے۔ سب کچھ آپ کے فون میں رہتا ہے، کچھ اپلوڈ نہیں ہوتا۔', 'To find and merge duplicate contacts, Cleanova needs permission to read and change contacts. Everything stays on your phone; nothing is uploaded.') + '</p><button class="btn" id="callow">' + T('اجازت دیں', 'Allow') + '</button></div>' + footer();
+      $('#callow').onclick = function () { P.contactsRequest().then(function (r) { c.st = r && r.granted ? 'ready' : 'need'; if (!(r && r.granted)) toast('اجازت نہیں ملی', 'Permission not granted'); vContacts(); }).catch(function () { toast('اجازت نہیں ملی', 'Permission not granted'); }); };
+      return;
+    }
+    if (c.st === 'ready') {
+      $('#body').innerHTML = '<div class="card center"><div style="font-size:50px">👥</div><h2 style="font-size:21px">' + T('ڈپلیکیٹ کانٹیکٹس', 'Duplicate contacts') + '</h2><p class="mut" style="margin-top:8px">' + tt('ایک ہی نمبر یا ایک ہی نام کے کانٹیکٹس ڈھونڈے جائیں گے۔ کوئی تبدیلی آپ کی تصدیق کے بغیر نہیں ہو گی، اور تبدیلی سے پہلے سارے کانٹیکٹس کی بیک اپ فائل بنے گی۔', 'Finds contacts with the same number or name. Nothing changes without your confirmation, and a backup file of all contacts is saved before any change.') + '</p><button class="btn" id="cscan">' + T('ڈپلیکیٹ ڈھونڈیں', 'Find duplicates') + '</button></div>' + footer();
+      $('#cscan').onclick = function () {
+        c.st = 'working'; vContacts();
+        P.contactsScan().then(function (r) {
+          c.groups = r.groups || []; c.total = r.total || 0; c.sel = {};
+          c.groups.forEach(function (g, i) { if (g.reason === 'number') c.sel[i] = 1; });
+          c.st = 'list'; vContacts();
+        }).catch(function (e) { c.st = 'ready'; vContacts(); toast('اسکین نہیں ہو سکا', 'Scan failed: ' + (e && e.message || e)); });
+      };
+      return;
+    }
+    if (c.st === 'result') {
+      var m = c.result;
+      $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">✅</div><h2 style="font-size:21px">' + T(m.act === 'merge' ? m.n + ' گروپ جوڑ دیے گئے' : m.n + ' فالتو کانٹیکٹس ہٹا دیے گئے', m.act === 'merge' ? m.n + ' groups merged' : m.n + ' extra contacts removed') + '</h2>' +
+        '<p class="mut" style="margin-top:8px">' + tt('بیک اپ فائل (' + m.count + ' کانٹیکٹس) یہاں محفوظ ہے:', 'Backup file (' + m.count + ' contacts) saved at:') + '</p><div class="pill" style="display:block;white-space:normal;word-break:break-all;margin-top:6px;text-align:start">' + esc(m.path.replace('/storage/emulated/0/', '')) + '</div>' +
+        '<p class="mut" style="margin-top:10px">' + tt('اگر کچھ غلط ہو جائے تو فون کی Contacts ایپ کھولیں، Settings میں Import کا آپشن چنیں اور یہ .vcf فائل منتخب کریں۔', 'If anything goes wrong, open your phone\'s Contacts app, choose Import in its settings, and pick this .vcf file.') + '</p>' +
+        '<button class="btn" id="cdone">' + T('ٹھیک ہے', 'Done') + '</button></div>' + footer();
+      $('#cdone').onclick = function () { S.back = []; S.view = 'home'; render(); };
+      return;
+    }
+    /* list */
+    if (!c.groups.length) { $('#body').innerHTML = '<div class="card center"><div style="font-size:54px">✨</div><h2 style="font-size:21px">' + T('کوئی ڈپلیکیٹ نہیں ملا', 'No duplicate contacts') + '</h2><p class="mut">' + c.total + ' ' + tt('کانٹیکٹس دیکھے گئے', 'contacts checked') + '</p></div>' + footer(); return; }
+    var h = '<div class="hero" style="display:block"><div class="k">' + T('ڈپلیکیٹ گروپ ملے', 'Duplicate groups found') + '</div><div class="big">' + c.groups.length + '</div><div class="k" style="font-size:12.5px">' + c.total + ' ' + tt('کانٹیکٹس میں سے', 'contacts checked') + '</div></div>' +
+      '<div class="chips"><button class="chip' + (c.act === 'merge' ? ' on' : '') + '" data-act="merge">' + tt('جوڑیں (تجویز کردہ)', 'Merge (recommended)') + '</button><button class="chip' + (c.act === 'delete' ? ' on' : '') + '" data-act="delete">' + tt('فالتو ہٹائیں', 'Delete extra') + '</button></div>' +
+      '<p class="mut" style="margin-top:8px">' + (c.act === 'merge' ? tt('جوڑنے سے سب نمبر ایک کانٹیکٹ میں آ جاتے ہیں، کچھ ضائع نہیں ہوتا۔', 'Merging puts all numbers into one contact; nothing is lost.') : tt('ہر گروپ میں سب سے زیادہ نمبروں والا رہے گا، باقی ہٹ جائیں گے۔', 'In each group the contact with the most numbers stays; the others are removed.')) + '</p>';
+    c.groups.forEach(function (g, i) {
+      h += '<div class="grp"><div class="hd"><span>' + (g.reason === 'number' ? tt('ایک ہی نمبر', 'Same number') : tt('ایک ہی نام، نمبر مختلف', 'Same name, different numbers')) + '</span><button class="sw" data-g="' + i + '" aria-pressed="' + !!c.sel[i] + '" aria-label="select"></button></div>';
+      g.contacts.forEach(function (ct, k) {
+        h += '<div class="row"><div class="t"><b>' + esc(ct.name || '—') + '</b><small class="e" style="display:block;direction:ltr;text-align:start">' + esc((ct.numbers || []).join(' · ')) + '</small></div>' + (c.act === 'delete' ? '<span class="pill' + (k === 0 ? ' a' : '') + '">' + (k === 0 ? tt('رکھیں ★', 'Keep ★') : tt('ہٹائیں', 'Remove')) + '</span>' : '') + '</div>';
+      });
+      h += '</div>';
+    });
+    $('#body').innerHTML = h + footer();
+    [].forEach.call(document.querySelectorAll('[data-act]'), function (b) { b.onclick = function () { c.act = b.dataset.act; var y = $('#body').scrollTop; vContacts(); $('#body').scrollTop = y; }; });
+    [].forEach.call(document.querySelectorAll('[data-g]'), function (b) { b.onclick = function () { var i = b.dataset.g; if (c.sel[i]) delete c.sel[i]; else c.sel[i] = 1; var y = $('#body').scrollTop; vContacts(); $('#body').scrollTop = y; }; });
+    var n = Object.keys(c.sel).length;
+    setBottom('<button class="btn" id="capply"' + (n ? '' : ' disabled') + '>' + T(c.act === 'merge' ? 'چنے ہوئے ' + n + ' گروپ جوڑیں' : 'چنے ہوئے ' + n + ' گروپ سے فالتو ہٹائیں', c.act === 'merge' ? 'Merge ' + n + ' selected groups' : 'Remove extras from ' + n + ' groups') + '</button>');
+    $('#capply').onclick = confirmContacts;
+  }
+  function confirmContacts() {
+    var c = S.ct, n = Object.keys(c.sel).length; if (!n) return;
+    var m = $('#modal'); m.hidden = false;
+    $('#sheet').innerHTML = '<h2 style="font-size:22px">' + T('تصدیق', 'Confirm') + '</h2><p style="margin-top:6px">' + tt(c.act === 'merge' ? n + ' گروپ کے کانٹیکٹس جوڑے جائیں گے۔' : n + ' گروپ میں سے فالتو کانٹیکٹس ہٹائے جائیں گے۔', c.act === 'merge' ? n + ' groups will be merged.' : 'Extra contacts in ' + n + ' groups will be removed.') + '</p>' +
+      '<p class="mut">' + tt('پہلے سارے کانٹیکٹس کی بیک اپ فائل (.vcf) بنے گی۔', 'A backup file (.vcf) of all contacts is made first.') + '</p>' +
+      '<button class="btn' + (c.act === 'delete' ? ' red' : '') + '" id="okc">' + T('ٹھیک ہے، شروع کریں', 'Yes, go ahead') + '</button><button class="btn o" id="noc">' + T('واپس جائیں', 'Cancel') + '</button>';
+    $('#noc').onclick = function () { m.hidden = true; };
+    $('#okc').onclick = function () { m.hidden = true; applyContacts(); };
+  }
+  function applyContacts() {
+    var c = S.ct, idx = Object.keys(c.sel), act = c.act, bk;
+    c.st = 'working'; setBottom(''); vContacts();
+    P.contactsBackup().then(function (b) {
+      bk = b;
+      if (act === 'merge') return P.contactsMerge({ groups: idx.map(function (i) { return c.groups[i].contacts.map(function (x) { return x.id; }); }) }).then(function (r) { return r.merged || 0; });
+      var ids = []; idx.forEach(function (i) { c.groups[i].contacts.slice(1).forEach(function (x) { ids.push(x.id); }); });
+      return P.contactsDelete({ ids: ids }).then(function (r) { return r.deleted || 0; });
+    }).then(function (n) {
+      c.result = { act: act, n: n, path: bk.path, count: bk.count }; c.st = 'result'; vContacts();
+    }).catch(function (e) { c.st = 'list'; vContacts(); toast('کام نہیں ہو سکا، کچھ نہیں بدلا', 'Failed, nothing was changed: ' + (e && e.message || e)); });
   }
 
   /* ---------- start ---------- */

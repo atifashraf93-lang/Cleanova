@@ -104,6 +104,19 @@ public class EngineTest {
     int[] sharp = new int[64*64], flat = new int[64*64];
     for (int i = 0; i < sharp.length; i++) { sharp[i] = ((i % 64) / 4 + (i / 64) / 4) % 2 * 200; flat[i] = 100 + (i % 64) / 16; }
     check(DupEngine.lapVar(sharp,64,64) > 1000 && DupEngine.lapVar(flat,64,64) < 25, "lapVar: sharp high, smooth low");
+    /* ---- contacts ---- */
+    List<ContactRec> cs = new ArrayList<ContactRec>();
+    ContactRec c1 = new ContactRec(1, "Ali Khan"); c1.numbers.add("0300-1234567");
+    ContactRec c2 = new ContactRec(2, "Ali K"); c2.numbers.add("+92 300 1234567"); c2.numbers.add("0321 7654321");
+    ContactRec c3 = new ContactRec(3, "ali  khan"); c3.numbers.add("0333 1111111");
+    ContactRec c4 = new ContactRec(4, "Bilal"); c4.numbers.add("0345 2222222");
+    ContactRec c5 = new ContactRec(5, "Short"); c5.numbers.add("123");
+    ContactRec c6 = new ContactRec(6, "Other"); c6.numbers.add("123");
+    cs.add(c1); cs.add(c2); cs.add(c3); cs.add(c4); cs.add(c5); cs.add(c6);
+    List<ContactGroup> cg = DupEngine.contactGroups(cs);
+    check(cg.size() == 1 && cg.get(0).contacts.size() == 3, "contacts: 0300.. / +92300.. and same-name merge into one group -> " + cg.size());
+    check(cg.get(0).reason.equals("number") && cg.get(0).contacts.get(0).id == 2, "contacts: reason=number, richest contact first");
+    check(DupEngine.normNumber("0092 300 1234567").equals("3001234567") && DupEngine.normNumber("12345").isEmpty(), "contacts: number normalising");
     System.out.println("ALL OK");
   }
 }
