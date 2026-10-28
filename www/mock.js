@@ -63,12 +63,20 @@
   };
 
   window.MonitorMock = (function () {
-    var ug = location.search.indexOf('nousage') < 0, lvl = 62;
+    var ug = location.search.indexOf('nousage') < 0, lvl = 62, ms = { on: false, limit: 80, low: 15, hot: 42, aLimit: true, aLow: true, aHot: true };
     var ic = function (c) { return 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="10" fill="' + c + '"/></svg>'); };
     var H = 3600000, MBn = 1048576;
     var apps = [['WhatsApp', 'com.whatsapp', '#25D366', 1.6, 9.5], ['YouTube', 'com.google.android.youtube', '#FF0000', 1.2, 7.2], ['Chrome', 'com.android.chrome', '#4285F4', 0.5, 3.4], ['TikTok', 'com.zhiliaoapp.musically', '#111', 0.3, 2.1], ['Taqweem', 'pk.smaa.taqweem', '#14A38B', 0.1, 0.6]];
     return {
       snapshot: function () { lvl = Math.max(5, lvl - (Math.random() < 0.2 ? 1 : 0)); return Promise.resolve({ battery: { level: lvl, charging: location.search.indexOf('charging') >= 0, full: false, plug: location.search.indexOf('charging') >= 0 ? 'ac' : 'none', health: 2, temp: 33.4, voltage: 3915, tech: 'Li-ion', currentUa: -412000, chargeUah: 2650000, saver: false, chargeMs: 2400000 }, ram: { total: 6 * 1024 * MBn * 1024 / 1024 * 1, avail: 2.1 * 1024 * MBn }, storage: { total: 128e9, free: 41e9 }, device: { brand: 'samsung', model: 'SM-A236E', android: '14', sdk: 34, cores: 8, uptime: 3 * 86400000 + 5 * H, abi: 'arm64-v8a' }, net: 'wifi' }); },
+      monitorStatus: function () { return Promise.resolve(JSON.parse(JSON.stringify(ms))); },
+      monitorSet: function (o) { for (var k in o) ms[k] = o[k]; return Promise.resolve(); },
+      monitorStart: function () { ms.on = true; return Promise.resolve(); },
+      monitorStop: function () { ms.on = false; return Promise.resolve(); },
+      batteryOptOpen: function () { return Promise.resolve(); },
+      history: function () { var pts = [], now = Date.now(); for (var i = 0; i < 120; i++) pts.push({ t: now - (120 - i) * 3600000 * 1.4, l: Math.round(50 + 40 * Math.sin(i / 7)), tp: 33, c: Math.sin(i / 7) > 0.6 ? 1 : 0 }); return Promise.resolve({ points: pts }); },
+      unusedApps: function () { return Promise.resolve({ count: 2, apps: [{ pkg: 'com.old.game', label: 'Old Game', idleDays: 140, size: 180 * MBn, icon: ic('#a55') }, { pkg: 'com.x.scanner', label: 'PDF Scanner', idleDays: 9999, size: 42 * MBn, icon: ic('#58a') }] }); },
+      uninstall: function () { return Promise.resolve(); },
       usageStatus: function () { return Promise.resolve({ granted: ug }); },
       usageRequest: function () { ug = true; return Promise.resolve(); },
       usage: function () { return Promise.resolve({ days: [3.1, 4.2, 2.8, 5.1, 3.7, 4.4, 2.6].map(function (x) { return x * H; }), unlocks: 47, apps: apps.map(function (a) { return { pkg: a[1], label: a[0], icon: ic(a[2]), today: a[3] * H, week: a[4] * H }; }) }); },

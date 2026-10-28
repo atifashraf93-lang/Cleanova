@@ -638,7 +638,7 @@
     if (samples.length < 2) return '<div class="mut" style="font-size:12px;margin-top:8px">' + tt('ہسٹری بننے میں کچھ وقت لگے گا، ایپ کھولتے رہیں۔', 'History builds up as you open the app.') + '</div>';
     var t0 = samples[0].t, t1 = samples[samples.length - 1].t, W = 300, H = 60, span = Math.max(1, t1 - t0);
     var pts = samples.map(function (s) { return ((s.t - t0) / span * W).toFixed(1) + ',' + (H - s.l / 100 * H).toFixed(1); }).join(' ');
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:64px;margin-top:8px;direction:ltr"><polyline points="' + pts + '" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linejoin="round"/></svg><div class="mut" style="font-size:11px;display:flex;justify-content:space-between;direction:ltr"><span>' + Math.max(1, Math.round(span / 3600000)) + 'h</span><span>' + tt('اب', 'now') + '</span></div>';
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:64px;margin-top:8px;direction:ltr"><polyline points="' + pts + '" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linejoin="round"/></svg><div class="mut" style="font-size:11px;display:flex;justify-content:space-between;direction:ltr"><span>' + (span > 129600000 ? Math.round(span / 86400000) + 'd' : Math.max(1, Math.round(span / 3600000)) + 'h') + '</span><span>' + tt('اب', 'now') + '</span></div>';
   }
   function recordBat(level) {
     try {
@@ -650,12 +650,15 @@
   function loadMon(full) {
     var M = S.mon = S.mon || {};
     MP.snapshot().then(function (s) { M.snap = s; if (S.view === 'monitor') vMonitor(true); }).catch(function () { M.err = true; if (S.view === 'monitor') vMonitor(true); });
-    if (!full) return;
+    if (!full) { MP.history().then(function (r) { M.hist = (r && r.points) || []; }).catch(function () { /* no history */ }); return; }
+    MP.monitorStatus().then(function (r) { M.mon = r; if (S.view === 'monitor') vMonitor(true); }).catch(function () { /* old build */ });
+    MP.history().then(function (r) { M.hist = (r && r.points) || []; if (S.view === 'monitor') vMonitor(true); }).catch(function () { /* no history */ });
     MP.usageStatus().then(function (r) {
       M.ug = !!(r && r.granted);
       if (S.view === 'monitor') vMonitor(true);
       if (!M.ug) return;
       MP.usage().then(function (u) { M.usage = u; if (S.view === 'monitor') vMonitor(true); }).catch(function () { M.usageErr = true; });
+      MP.unusedApps({ days: 30 }).then(function (u) { M.unused = u; if (S.view === 'monitor') vMonitor(true); }).catch(function () { /* optional */ });
       MP.dataUsage().then(function (u) { M.data = u; if (S.view === 'monitor') vMonitor(true); }).catch(function () { M.dataErr = true; });
     }).catch(function () { M.ug = false; });
   }
@@ -672,7 +675,7 @@
     if (!soft || !$('#monroot')) { $('#body').innerHTML = '<div id="monroot"></div>'; }
     var s = M.snap, h = '';
     if (!s) { $('#monroot').innerHTML = '<div class="card center"><div class="spin"></div></div>'; return; }
-    var b = s.battery || {}, lvl = b.level || 0, hist = recordBat(lvl);
+    var b = s.battery || {}, lvl = b.level || 0, hist = recordBat(lvl); if (M.hist && M.hist.length > 1) hist = M.hist;
     var plug = { ac: tt('چارجر', 'AC charger'), usb: 'USB', wireless: tt('وائرلیس', 'Wireless'), none: '' }[b.plug] || '';
     var healthN = { 2: ['اچھی', 'Good'], 3: ['زیادہ گرم', 'Overheated'], 4: ['خراب', 'Dead'], 5: ['زیادہ وولٹیج', 'Over voltage'], 6: ['خرابی', 'Failure'], 7: ['بہت ٹھنڈی', 'Cold'] }[b.health] || ['نامعلوم', 'Unknown'];
     var mA = b.currentUa ? Math.round(Math.abs(b.currentUa) / (Math.abs(b.currentUa) > 20000 ? 1000 : 1)) : 0, cap = b.chargeUah ? Math.round(b.chargeUah / 1000) : 0, left = '';
@@ -686,7 +689,20 @@
       (mA ? '<div class="kv"><span>' + tt(b.charging ? 'چارجنگ کرنٹ' : 'استعمال کا کرنٹ', b.charging ? 'Charging current' : 'Draw') + '</span><b>' + mA + ' mA</b></div>' : '') +
       (cap ? '<div class="kv"><span>' + tt('موجودہ چارج', 'Charge now') + '</span><b>' + cap + ' mAh</b></div>' : '') +
       (b.tech ? '<div class="kv"><span>' + tt('ٹیکنالوجی', 'Technology') + '</span><b>' + b.tech + '</b></div>' : '') +
-      '<div class="sec" style="margin:12px 0 0">' + tt('پچھلے 24 گھنٹے', 'LAST 24 HOURS') + '</div>' + spark(hist) + '</div>';
+      '<div class="sec" style="margin:12px 0 0">' + tt('بیٹری کی ہسٹری', 'BATTERY HISTORY') + '</div>' + spark(hist) + '</div>';
+    var mo = M.mon;
+    if (mo) {
+      var chips = function (key, flag, vals, unit) {
+        return '<div class="chips">' + vals.map(function (v) { var on = mo[flag] && mo[key] === v; return '<button class="chip' + (on ? ' on' : '') + '" data-mset="' + key + ':' + v + '">' + v + unit + '</button>'; }).join('') + '<button class="chip' + (!mo[flag] ? ' on' : '') + '" data-mset="' + flag + ':0">' + tt('بند', 'Off') + '</button></div>';
+      };
+      h += '<div class="sec">' + tt('الرٹس اور پس منظر نگرانی', 'ALERTS AND BACKGROUND MONITORING') + '</div><div class="card"><div class="kv"><span>' + tt('نگرانی', 'Monitoring') + '</span><b style="color:' + (mo.on ? 'var(--acc)' : 'var(--mut)') + '">' + (mo.on ? tt('آن', 'ON') : tt('بند', 'OFF')) + '</b></div>' +
+        '<p class="mut" style="font-size:12.5px;margin:6px 0">' + tt('آن ہونے پر ایپ بند ہونے کے بعد بھی بیٹری کی ہسٹری بنتی رہتی ہے اور الرٹ آتے ہیں۔ اوپر ایک چھوٹا نوٹیفکیشن مستقل رہتا ہے۔', 'When on, battery history keeps recording and alerts arrive even when the app is closed. A small notification stays visible.') + '</p>' +
+        '<div class="sec" style="margin:10px 0 4px">' + tt('چارج کی حد (چارجر ہٹانے کی یاد دہانی)', 'CHARGE LIMIT (REMIND ME TO UNPLUG)') + '</div>' + chips('limit', 'aLimit', [70, 80, 90, 100], '%') +
+        '<div class="sec" style="margin:10px 0 4px">' + tt('کم بیٹری کا الرٹ', 'LOW BATTERY ALERT') + '</div>' + chips('low', 'aLow', [10, 15, 20, 30], '%') +
+        '<div class="sec" style="margin:10px 0 4px">' + tt('گرمی کا الرٹ', 'HEAT ALERT') + '</div>' + chips('hot', 'aHot', [40, 42, 45, 48], '°') +
+        '<button class="btn" id="monToggle">' + (mo.on ? T('نگرانی بند کریں', 'Stop monitoring') : T('نگرانی شروع کریں', 'Start monitoring')) + '</button>' +
+        (mo.on ? '<button class="btn" id="monOpt" style="background:var(--card2);color:var(--text);box-shadow:none;border:1px solid var(--line);min-height:44px;font-size:15px">' + T('اگر الرٹ رک جائیں تو یہاں سے بیٹری آپٹمائزیشن بند کریں', 'If alerts stop, turn off battery optimisation') + '</button>' : '') + '</div>';
+    }
     var ru = s.ram.total - s.ram.avail, rp = Math.round(ru / s.ram.total * 100), su = s.storage.total - s.storage.free, sp = s.storage.total ? Math.round(su / s.storage.total * 100) : 0;
     h += '<div class="sec">' + tt('میموری اور اسٹوریج', 'MEMORY AND STORAGE') + '</div><div class="card"><div class="kv"><span>RAM</span><b>' + fmt(ru) + ' / ' + fmt(s.ram.total) + ' (' + rp + '%)</b></div><div class="mbar"><i style="width:' + rp + '%' + (rp > 85 ? ';background:var(--red)' : '') + '"></i></div>' +
       '<div class="kv" style="margin-top:12px"><span>' + tt('اسٹوریج', 'Storage') + '</span><b>' + fmt(su) + ' / ' + fmt(s.storage.total) + ' (' + sp + '%)</b></div><div class="mbar"><i style="width:' + sp + '%' + (sp > 90 ? ';background:var(--red)' : '') + '"></i></div></div>';
@@ -702,6 +718,11 @@
       h += '<div class="card"><div class="sec" style="margin:0 0 8px">' + tt('سب سے زیادہ استعمال (7 دن)', 'MOST USED (7 DAYS)') + '</div>' + appRows(u.apps.map(function (a) { return { label: a.label, pkg: a.pkg, icon: a.icon, week: a.week, v: a.week }; }), 'week', mx) + '</div>';
     } else if (M.usageErr) { h += '<div class="card mut">' + tt('استعمال کی معلومات نہیں مل سکیں۔', 'Could not read app usage.') + '</div>'; }
     else if (M.ug) { h += '<div class="card center"><div class="spin"></div></div>'; }
+    if (M.ug && M.unused && M.unused.apps && M.unused.apps.length) {
+      h += '<div class="sec">' + tt('ایپس جو 30 دن سے نہیں کھولیں', 'APPS NOT OPENED FOR 30+ DAYS') + '</div><div class="card">' + M.unused.apps.map(function (a) {
+        return '<div class="arow">' + (a.icon ? '<img src="' + a.icon + '" alt="">' : '<span class="noic">📦</span>') + '<div style="flex:1;min-width:0"><b class="an">' + (a.label || a.pkg) + '</b><span class="mut" style="font-size:11.5px">' + (a.idleDays >= 9999 ? tt('کبھی نہیں کھولی', 'never opened') : a.idleDays + ' ' + tt('دن', 'days')) + ' · ' + fmt(a.size) + '</span></div><button class="chip" data-un="' + a.pkg + '">' + tt('ہٹائیں', 'Remove') + '</button></div>';
+      }).join('') + '<p class="mut" style="font-size:12px;margin-top:8px">' + tt('ہٹانے سے پہلے اینڈرائیڈ آپ سے تصدیق مانگے گا۔', 'Android will ask you to confirm before removing.') + '</p></div>';
+    }
     if (M.ug && M.data) {
       var dd = M.data, wt = 0, mt = 0; dd.wifi.forEach(function (x) { wt += x; }); dd.mobile.forEach(function (x) { mt += x; });
       var both = dd.wifi.map(function (x, i) { return x + dd.mobile[i]; });
@@ -711,6 +732,20 @@
     }
     h += '<p class="mut" style="font-size:12px;margin:14px 4px">' + tt('نوٹ: اعداد و شمار اینڈرائیڈ سسٹم سے لیے جاتے ہیں، کچھ فونز پر کچھ قدریں دستیاب نہیں ہوتیں۔', 'Note: values come from Android and some phones do not report every reading.') + '</p>' + footer();
     $('#monroot').innerHTML = h;
+    [].forEach.call(document.querySelectorAll('[data-mset]'), function (b) {
+      b.onclick = function () {
+        var p = b.dataset.mset.split(':'), o = {};
+        if (p[0].charAt(0) === 'a') o[p[0]] = false; else { o[p[0]] = +p[1]; o['a' + p[0].charAt(0).toUpperCase() + p[0].slice(1)] = true; }
+        MP.monitorSet(o).then(function () { return MP.monitorStatus(); }).then(function (r) { M.mon = r; vMonitor(true); });
+      };
+    });
+    var mt = $('#monToggle'); if (mt) mt.onclick = function () {
+      if (M.mon.on) { MP.monitorStop().then(function () { M.mon.on = false; vMonitor(true); }); return; }
+      var LN = Cap && Cap.Plugins && Cap.Plugins.LocalNotifications;
+      Promise.resolve(LN && LN.requestPermissions ? LN.requestPermissions().catch(function () { return null; }) : null).then(function () { return MP.monitorStart(); }).then(function () { M.mon.on = true; vMonitor(true); toast('نگرانی شروع ہو گئی', 'Monitoring started'); }).catch(function (e) { toast('شروع نہیں ہو سکی', 'Could not start: ' + (e && e.message || e)); });
+    };
+    var mo2 = $('#monOpt'); if (mo2) mo2.onclick = function () { MP.batteryOptOpen().catch(function () { /* unavailable */ }); };
+    [].forEach.call(document.querySelectorAll('[data-un]'), function (b) { b.onclick = function () { MP.uninstall({ pkg: b.dataset.un }).catch(function () { /* unavailable */ }); }; });
     var ua = $('#uallow'); if (ua) ua.onclick = function () { MP.usageRequest().catch(function () { /* settings unavailable */ }); };
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden && S.view === 'monitor' && S.mon && S.mon.ug === false) { S.mon.ug = undefined; vMonitor(); } });

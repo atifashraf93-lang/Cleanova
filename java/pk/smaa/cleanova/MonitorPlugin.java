@@ -349,4 +349,162 @@ public class MonitorPlugin extends Plugin {
             return b.getRxBytes() + b.getTxBytes();
         } catch (Throwable t) { return 0L; }
     }
+
+    /* ---------- background monitor control ---------- */
+    private android.content.SharedPreferences mp() { return ctx().getSharedPreferences(MonitorService.PREFS, Context.MODE_PRIVATE); }
+
+    private void startSvc() {
+        Intent i = new Intent(ctx(), MonitorService.class);
+        if (Build.VERSION.SDK_INT >= 26) ctx().startForegroundService(i); else ctx().startService(i);
+    }
+
+    @PluginMethod
+    public void monitorStatus(PluginCall call) {
+        android.content.SharedPreferences sp = mp();
+        JSObject r = new JSObject();
+        r.put("on", sp.getBoolean("on", false));
+        r.put("limit", sp.getInt("limit", 80));
+        r.put("low", sp.getInt("low", 15));
+        r.put("hot", sp.getInt("hot", 42));
+        r.put("aLimit", sp.getBoolean("aLimit", true));
+        r.put("aLow", sp.getBoolean("aLow", true));
+        r.put("aHot", sp.getBoolean("aHot", true));
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void monitorSet(PluginCall call) {
+        android.content.SharedPreferences.Editor e = mp().edit();
+        if (call.hasOption("limit")) e.putInt("limit", call.getInt("limit", 80));
+        if (call.hasOption("low")) e.putInt("low", call.getInt("low", 15));
+        if (call.hasOption("hot")) e.putInt("hot", call.getInt("hot", 42));
+        if (call.hasOption("aLimit")) e.putBoolean("aLimit", call.getBoolean("aLimit", true));
+        if (call.hasOption("aLow")) e.putBoolean("aLow", call.getBoolean("aLow", true));
+        if (call.hasOption("aHot")) e.putBoolean("aHot", call.getBoolean("aHot", true));
+        e.putBoolean("fLimit", false).putBoolean("fLow", false).putBoolean("fHot", false);
+        e.apply();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void monitorStart(PluginCall call) {
+        try {
+            mp().edit().putBoolean("on", true).apply();
+            startSvc();
+            call.resolve();
+        } catch (Throwable t) { call.reject("cannot start: " + t); }
+    }
+
+    @PluginMethod
+    public void monitorStop(PluginCall call) {
+        mp().edit().putBoolean("on", false).apply();
+        try { ctx().stopService(new Intent(ctx(), MonitorService.class)); } catch (Throwable t) { /* already stopped */ }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void batteryOptOpen(PluginCall call) {
+        try {
+            Intent i = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx().startActivity(i);
+            call.resolve();
+        } catch (Throwable t) { call.reject("cannot open: " + t); }
+    }
+
+    /** Battery history written by the service (last 7 days), thinned to at most about 300 points. */
+    @PluginMethod
+    public void history(PluginCall call) {
+        ArrayList<long[]> pts = new ArrayList<long[]>();
+        try {
+            java.io.File f = MonitorService.histFile(ctx());
+            if (f.exists()) {
+                java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f));
+                String ln;
+                long cut = System.currentTimeMillis() - 7L * DAY;
+                while ((ln = r.readLine()) != null) {
+                    String[] p = ln.split(",");
+                    if (p.length < 4) continue;
+                    try {
+                        long t = Long.parseLong(p[0]);
+                        if (t < cut) continue;
+                        pts.add(new long[] { t, Long.parseLong(p[1]), Math.round(Double.parseDouble(p[2]) * 10), Long.parseLong(p[3]) });
+                    } catch (NumberFormatException x) { /* skip bad line */ }
+                }
+                r.close();
+            }
+        } catch (Throwable t) { /* no history yet */ }
+        int step = Math.max(1, pts.size() / 300);
+        JSArray out = new JSArray();
+        for (int i = 0; i < pts.size(); i += step) {
+            long[] p = pts.get(i);
+            JSObject o = new JSObject();
+            o.put("t", p[0]); o.put("l", p[1]); o.put("tp", p[2] / 10.0); o.put("c", p[3]);
+            out.put(o);
+        }
+        JSObject r = new JSObject();
+        r.put("points", out);
+        call.resolve(r);
+    }
+
+    /** Apps the user installed but has not opened for a long time (needs usage access). */
+    @PluginMethod
+    public void unusedApps(final PluginCall call) {
+        if (!hasUsage()) { call.reject("no usage access"); return; }
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    long now = System.currentTimeMillis();
+                    final int days = call.getInt("days", 30);
+                    UsageStatsManager usm = (UsageStatsManager) ctx().getSystemService(Context.USAGE_STATS_SERVICE);
+                    java.util.List<android.app.usage.UsageStats> st = usm.queryUsageStats(UsageStatsManager.INTERVAL_YEARLY, now - 365L * DAY, now);
+                    Map<String, Long> last = new HashMap<String, Long>();
+                    if (st != null) for (android.app.usage.UsageStats u : st) {
+                        Long o = last.get(u.getPackageName());
+                        long lu = u.getLastTimeUsed();
+                        if (o == null || lu > o) last.put(u.getPackageName(), lu);
+                    }
+                    PackageManager pm = ctx().getPackageManager();
+                    ArrayList<Object[]> rows = new ArrayList<Object[]>();
+                    for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
+                        if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0 || (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) continue;
+                        if (ai.packageName.equals(ctx().getPackageName())) continue;
+                        Long lu = last.get(ai.packageName);
+                        long idle = lu == null || lu <= 0 ? 9999L : (now - lu) / DAY;
+                        if (idle < days) continue;
+                        long size = 0;
+                        try { size = new java.io.File(ai.sourceDir).length(); } catch (Throwable t) { /* ignore */ }
+                        rows.add(new Object[] { ai.packageName, idle, size });
+                    }
+                    Collections.sort(rows, new Comparator<Object[]>() { public int compare(Object[] a, Object[] b) { long x = (Long) a[2], y = (Long) b[2]; return x < y ? 1 : x > y ? -1 : 0; } });
+                    JSArray out = new JSArray();
+                    int n = 0;
+                    for (Object[] w : rows) {
+                        if (n++ >= 25) break;
+                        JSObject o = new JSObject();
+                        o.put("pkg", (String) w[0]);
+                        o.put("label", label(pm, (String) w[0]));
+                        o.put("idleDays", (Long) w[1]);
+                        o.put("size", (Long) w[2]);
+                        o.put("icon", n <= 12 ? icon(pm, (String) w[0]) : "");
+                        out.put(o);
+                    }
+                    JSObject r = new JSObject();
+                    r.put("apps", out);
+                    r.put("count", rows.size());
+                    call.resolve(r);
+                } catch (Throwable t) { call.reject("failed: " + t); }
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void uninstall(PluginCall call) {
+        try {
+            Intent i = new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + call.getString("pkg")));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx().startActivity(i);
+            call.resolve();
+        } catch (Throwable t) { call.reject("cannot open uninstall: " + t); }
+    }
 }
