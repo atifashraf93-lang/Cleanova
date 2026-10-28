@@ -61,4 +61,18 @@
     trashRestore: function (o) { var n = 0; trash = trash.filter(function (t) { if (o.ids.indexOf(t.id) >= 0) { n++; return false; } return true; }); return Promise.resolve({ restored: n }); },
     trashEmpty: function (o) { var f = 0; trash = trash.filter(function (t) { if (!o.ids || o.ids.indexOf(t.id) >= 0) { f += t.size; return false; } return true; }); return Promise.resolve({ freed: f }); }
   };
+
+  window.MonitorMock = (function () {
+    var ug = location.search.indexOf('nousage') < 0, lvl = 62;
+    var ic = function (c) { return 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="10" fill="' + c + '"/></svg>'); };
+    var H = 3600000, MBn = 1048576;
+    var apps = [['WhatsApp', 'com.whatsapp', '#25D366', 1.6, 9.5], ['YouTube', 'com.google.android.youtube', '#FF0000', 1.2, 7.2], ['Chrome', 'com.android.chrome', '#4285F4', 0.5, 3.4], ['TikTok', 'com.zhiliaoapp.musically', '#111', 0.3, 2.1], ['Taqweem', 'pk.smaa.taqweem', '#14A38B', 0.1, 0.6]];
+    return {
+      snapshot: function () { lvl = Math.max(5, lvl - (Math.random() < 0.2 ? 1 : 0)); return Promise.resolve({ battery: { level: lvl, charging: location.search.indexOf('charging') >= 0, full: false, plug: location.search.indexOf('charging') >= 0 ? 'ac' : 'none', health: 2, temp: 33.4, voltage: 3915, tech: 'Li-ion', currentUa: -412000, chargeUah: 2650000, saver: false, chargeMs: 2400000 }, ram: { total: 6 * 1024 * MBn * 1024 / 1024 * 1, avail: 2.1 * 1024 * MBn }, storage: { total: 128e9, free: 41e9 }, device: { brand: 'samsung', model: 'SM-A236E', android: '14', sdk: 34, cores: 8, uptime: 3 * 86400000 + 5 * H, abi: 'arm64-v8a' }, net: 'wifi' }); },
+      usageStatus: function () { return Promise.resolve({ granted: ug }); },
+      usageRequest: function () { ug = true; return Promise.resolve(); },
+      usage: function () { return Promise.resolve({ days: [3.1, 4.2, 2.8, 5.1, 3.7, 4.4, 2.6].map(function (x) { return x * H; }), unlocks: 47, apps: apps.map(function (a) { return { pkg: a[1], label: a[0], icon: ic(a[2]), today: a[3] * H, week: a[4] * H }; }) }); },
+      dataUsage: function () { return Promise.resolve({ wifi: [1.1, 0.8, 1.4, 2.2, 0.9, 1.6, 0.7].map(function (x) { return x * 1024 * MBn; }), mobile: [90, 140, 60, 210, 120, 80, 45].map(function (x) { return x * MBn; }), apps: apps.map(function (a, i) { return { pkg: a[1], label: a[0], icon: ic(a[2]), today: a[3] * 100 * MBn, week: a[4] * 300 * MBn, mobile: 0 }; }) }); }
+    };
+  })();
 })();

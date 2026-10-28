@@ -98,6 +98,21 @@ body:not(.en) .big { text-align: start; }
 .tabs { display: flex; gap: 8px; margin-top: 8px; }
 .tabs button { flex: 1; min-height: 44px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); font-size: 15px; line-height: 1.4; }
 .tag { font-family: system-ui, sans-serif; font-size: 10.5px; position: absolute; top: 4px; inset-inline-start: 4px; background: #000a; color: #fff; border-radius: 8px; padding: 0 6px; }
+
+.mbar { height: 8px; border-radius: 5px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.mbar i { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg,var(--acc),var(--acc2)); }
+.kv { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+.kv:last-of-type { border-bottom: 0; }
+.kv b { font-family: system-ui, sans-serif; direction: ltr; text-align: end; }
+.mcols { display: flex; align-items: flex-end; gap: 6px; height: 118px; margin-top: 12px; direction: ltr; }
+.mc { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; min-width: 0; }
+.mc i { width: 100%; max-width: 26px; border-radius: 6px 6px 3px 3px; }
+.mv { font-size: 9.5px; color: var(--mut); font-family: system-ui, sans-serif; white-space: nowrap; }
+.ml { font-size: 10.5px; color: var(--mut); }
+.arow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.arow img, .noic { width: 34px; height: 34px; border-radius: 9px; flex: none; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+.an { font-size: 14px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: system-ui, sans-serif; }
+.av { direction: ltr; font-size: 12.5px; color: var(--mut); white-space: nowrap; font-family: system-ui, sans-serif; }
 </style>
 </head>
 <body>

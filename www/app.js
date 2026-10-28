@@ -210,9 +210,9 @@
   /* ---------- navigation ---------- */
   var TABS = [
     { id: 'home', ic: '🏠', ur: 'ہوم', en: 'Home' }, { id: 'overview', ic: '📊', ur: 'نتیجہ', en: 'Results' },
-    { id: 'trash', ic: '🗑', ur: 'ٹریش', en: 'Trash' }, { id: 'settings', ic: '⚙', ur: 'ترتیبات', en: 'Settings' }
+    { id: 'monitor', ic: '📈', ur: 'مانیٹر', en: 'Monitor' }, { id: 'trash', ic: '🗑', ur: 'ٹریش', en: 'Trash' }, { id: 'settings', ic: '⚙', ur: 'ترتیبات', en: 'Settings' }
   ];
-  var TAB_OF = { home: 'home', overview: 'overview', dups: 'overview', review: 'overview', list: 'overview', wa: 'overview', trash: 'trash', settings: 'settings', done: 'home', contacts: 'home' };
+  var TAB_OF = { home: 'home', overview: 'overview', dups: 'overview', review: 'overview', list: 'overview', wa: 'overview', trash: 'trash', settings: 'settings', done: 'home', contacts: 'home', monitor: 'monitor' };
   function go(view, extra) { S.back.push({ view: S.view, review: S.review, list: S.list }); S.view = view; if (extra !== undefined) { if (view === 'review') S.review = extra; else S.list = extra; } S.limit = 150; render(); }
   function goBack() {
     if (!$('#modal').hidden) { $('#modal').hidden = true; return true; }
@@ -243,6 +243,7 @@
       b.onclick = function () {
         var id = b.dataset.tab; S.back = [];
         if (id === 'contacts') { S.ct = { st: 'init', groups: [], sel: {}, act: 'merge' }; go('contacts'); return; }
+    if (id === 'monitor') { S.mon = null; go('monitor'); return; }
     if (id === 'trash') { loadTrash().then(function () { S.view = 'trash'; render(); }); return; }
         S.view = id; render();
       };
@@ -257,7 +258,8 @@
   function footer() { return '<div class="foot">' + tt('سب کچھ آپ کے فون میں ہوتا ہے، کچھ اپلوڈ نہیں ہوتا۔', 'Everything stays on your phone. Nothing is uploaded.') + '<br>Developed by <b>SMAA</b></div>'; }
 
   function render() {
-    var fn = { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone, contacts: vContacts }[S.view] || vHome;
+    var fn = { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone, contacts: vContacts, monitor: vMonitor }[S.view] || vHome;
+    if (S.view !== 'monitor') clearMon();
     $('#body').scrollTop = 0;
     $('#body').onclick = null;
     setNav(S.view !== 'gate' && S.view !== 'scanning');
@@ -290,6 +292,7 @@
   }
   function openTool(id) {
     if (id === 'contacts') { S.ct = { st: 'init', groups: [], sel: {}, act: 'merge' }; go('contacts'); return; }
+    if (id === 'monitor') { S.mon = null; go('monitor'); return; }
     if (id === 'trash') { loadTrash().then(function () { S.back = []; go('trash'); }); return; }
     if (!S.scanned) { go(id === 'dups' ? 'dups' : (id === 'wa' ? 'wa' : 'list'), id === 'dups' || id === 'wa' ? undefined : id); return; }
     if (id === 'dups') go('dups'); else if (id === 'wa') go('wa'); else go('list', id);
@@ -316,6 +319,7 @@
       tile('junk', '🧹', 'فالتو فائلیں', 'Junk files', sub.junk, sz(sumItems(S.x.junk))) +
       tile('old', '📥', 'پرانی ڈاؤن لوڈز', 'Old downloads', sub.old, sz(sumItems(S.x.old.filter(function (i) { return older(i, 30); })))) +
       tile('contacts', '👥', 'ڈپلیکیٹ کانٹیکٹس', 'Duplicate contacts', sub.contacts, '') +
+      tile('monitor', '📈', 'فون مانیٹر', 'Phone monitor', ['بیٹری، RAM، استعمال', 'Battery, RAM, usage'], '') +
       tile('trash', '♻', 'ٹریش', 'Trash', sub.trash, '') + '</div>' + footer();
     $('#scanbtn').onclick = startScan;
     [].forEach.call(document.querySelectorAll('[data-open]'), function (b) { b.onclick = function () { openTool(b.dataset.open); }; });
@@ -613,6 +617,104 @@
   }
 
   /* ---------- duplicate contacts (merge by default, always backed up first) ---------- */
+  /* ---------- phone monitor ---------- */
+  var MP = (Cap && Cap.Plugins && Cap.Plugins.Monitor && !window.CLEANOVA_MOCK) ? Cap.Plugins.Monitor : window.MonitorMock;
+  var monTimer = 0;
+  function clearMon() { if (monTimer) { clearInterval(monTimer); monTimer = 0; } }
+  function dur(ms) {
+    var m = Math.round(ms / 60000), h = Math.floor(m / 60); m = m % 60;
+    if (!h && !m) return PREF.lang === 'en' ? '<1 min' : '1 منٹ سے کم';
+    return PREF.lang === 'en' ? (h ? h + 'h ' : '') + m + 'm' : (h ? h + ' گھنٹے ' : '') + (m ? m + ' منٹ' : '');
+  }
+  function monBars(vals, fmtv, color) {
+    var mx = Math.max.apply(null, vals.concat([1])), nm = PREF.lang === 'en' ? ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] : ['اتو', 'پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ'], d = new Date(), h = '<div class="mcols">';
+    vals.forEach(function (v, i) {
+      var dd = new Date(d.getTime() - (vals.length - 1 - i) * 86400000);
+      h += '<div class="mc"><span class="mv">' + (v ? fmtv(v) : '') + '</span><i style="height:' + Math.max(3, Math.round(v / mx * 70)) + 'px;background:' + (color || 'var(--acc)') + (i === vals.length - 1 ? '' : ';opacity:.55') + '"></i><span class="ml">' + nm[dd.getDay()] + '</span></div>';
+    });
+    return h + '</div>';
+  }
+  function spark(samples) {
+    if (samples.length < 2) return '<div class="mut" style="font-size:12px;margin-top:8px">' + tt('ہسٹری بننے میں کچھ وقت لگے گا، ایپ کھولتے رہیں۔', 'History builds up as you open the app.') + '</div>';
+    var t0 = samples[0].t, t1 = samples[samples.length - 1].t, W = 300, H = 60, span = Math.max(1, t1 - t0);
+    var pts = samples.map(function (s) { return ((s.t - t0) / span * W).toFixed(1) + ',' + (H - s.l / 100 * H).toFixed(1); }).join(' ');
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:64px;margin-top:8px;direction:ltr"><polyline points="' + pts + '" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linejoin="round"/></svg><div class="mut" style="font-size:11px;display:flex;justify-content:space-between;direction:ltr"><span>' + Math.max(1, Math.round(span / 3600000)) + 'h</span><span>' + tt('اب', 'now') + '</span></div>';
+  }
+  function recordBat(level) {
+    try {
+      var a = JSON.parse(localStorage.getItem('cl.bat') || '[]'), now = Date.now();
+      if (!a.length || now - a[a.length - 1].t > 5 * 60000) { a.push({ t: now, l: level }); a = a.filter(function (x) { return now - x.t < 86400000; }); localStorage.setItem('cl.bat', JSON.stringify(a)); }
+      return a;
+    } catch (e) { return []; }
+  }
+  function loadMon(full) {
+    var M = S.mon = S.mon || {};
+    MP.snapshot().then(function (s) { M.snap = s; if (S.view === 'monitor') vMonitor(true); }).catch(function () { M.err = true; if (S.view === 'monitor') vMonitor(true); });
+    if (!full) return;
+    MP.usageStatus().then(function (r) {
+      M.ug = !!(r && r.granted);
+      if (S.view === 'monitor') vMonitor(true);
+      if (!M.ug) return;
+      MP.usage().then(function (u) { M.usage = u; if (S.view === 'monitor') vMonitor(true); }).catch(function () { M.usageErr = true; });
+      MP.dataUsage().then(function (u) { M.data = u; if (S.view === 'monitor') vMonitor(true); }).catch(function () { M.dataErr = true; });
+    }).catch(function () { M.ug = false; });
+  }
+  function appRows(list, key, max, bytes) {
+    return list.filter(function (a) { return a[key] > 0; }).sort(function (a, b) { return b[key] - a[key]; }).slice(0, 8).map(function (a) {
+      var val = bytes ? fmt(a.v) : dur(a.v);
+      return '<div class="arow">' + (a.icon ? '<img src="' + a.icon + '" alt="">' : '<span class="noic">📦</span>') + '<div style="flex:1;min-width:0"><b class="an">' + (a.label || a.pkg) + '</b><div class="mbar"><i style="width:' + Math.max(3, Math.round(a[key] / max * 100)) + '%"></i></div></div><span class="av">' + val + '</span></div>';
+    }).join('');
+  }
+  function vMonitor(soft) {
+    setTop(T('فون مانیٹر', 'Phone monitor'));
+    var M = S.mon = S.mon || {};
+    if (!soft) { clearMon(); loadMon(true); monTimer = setInterval(function () { if (S.view !== 'monitor') return clearMon(); loadMon(false); }, 5000); }
+    if (!soft || !$('#monroot')) { $('#body').innerHTML = '<div id="monroot"></div>'; }
+    var s = M.snap, h = '';
+    if (!s) { $('#monroot').innerHTML = '<div class="card center"><div class="spin"></div></div>'; return; }
+    var b = s.battery || {}, lvl = b.level || 0, hist = recordBat(lvl);
+    var plug = { ac: tt('چارجر', 'AC charger'), usb: 'USB', wireless: tt('وائرلیس', 'Wireless'), none: '' }[b.plug] || '';
+    var healthN = { 2: ['اچھی', 'Good'], 3: ['زیادہ گرم', 'Overheated'], 4: ['خراب', 'Dead'], 5: ['زیادہ وولٹیج', 'Over voltage'], 6: ['خرابی', 'Failure'], 7: ['بہت ٹھنڈی', 'Cold'] }[b.health] || ['نامعلوم', 'Unknown'];
+    var mA = b.currentUa ? Math.round(Math.abs(b.currentUa) / (Math.abs(b.currentUa) > 20000 ? 1000 : 1)) : 0, cap = b.chargeUah ? Math.round(b.chargeUah / 1000) : 0, left = '';
+    if (b.charging && b.chargeMs) left = dur(b.chargeMs) + ' ' + tt('میں مکمل چارج', 'to full');
+    else if (!b.charging && cap && mA > 20) left = '≈ ' + dur(cap / mA * 3600000) + ' ' + tt('باقی', 'left');
+    var hot = b.temp >= 40, col = lvl <= 15 && !b.charging ? 'var(--red)' : 'var(--acc)';
+    h += '<div class="hero" style="margin-top:6px"><div class="ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--line)" stroke-width="3.4"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="' + col + '" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="' + (Math.max(2, lvl) * 0.97).toFixed(1) + ' 100"/></svg><div>' + lvl + '%</div></div><div style="flex:1"><div class="k">' + (b.full ? T('بیٹری مکمل', 'Fully charged') : b.charging ? T('چارج ہو رہی ہے ⚡', 'Charging ⚡') : T('بیٹری', 'Battery')) + '</div><div style="margin-top:4px;font-size:15px">' + (left || '') + '</div><div class="mut" style="font-size:12.5px">' + plug + (b.saver ? ' · ' + tt('بیٹری سیور آن', 'Battery saver on') : '') + '</div></div></div>';
+    h += '<div class="card"><div class="kv"><span>' + tt('درجہ حرارت', 'Temperature') + '</span><b style="color:' + (hot ? 'var(--red)' : 'inherit') + '">' + (b.temp != null ? b.temp.toFixed(1) + ' °C' : '–') + (hot ? ' ⚠' : '') + '</b></div>' +
+      '<div class="kv"><span>' + tt('بیٹری کی صحت', 'Health') + '</span><b>' + tt(healthN[0], healthN[1]) + '</b></div>' +
+      '<div class="kv"><span>' + tt('وولٹیج', 'Voltage') + '</span><b>' + (b.voltage ? (b.voltage / 1000).toFixed(2) + ' V' : '–') + '</b></div>' +
+      (mA ? '<div class="kv"><span>' + tt(b.charging ? 'چارجنگ کرنٹ' : 'استعمال کا کرنٹ', b.charging ? 'Charging current' : 'Draw') + '</span><b>' + mA + ' mA</b></div>' : '') +
+      (cap ? '<div class="kv"><span>' + tt('موجودہ چارج', 'Charge now') + '</span><b>' + cap + ' mAh</b></div>' : '') +
+      (b.tech ? '<div class="kv"><span>' + tt('ٹیکنالوجی', 'Technology') + '</span><b>' + b.tech + '</b></div>' : '') +
+      '<div class="sec" style="margin:12px 0 0">' + tt('پچھلے 24 گھنٹے', 'LAST 24 HOURS') + '</div>' + spark(hist) + '</div>';
+    var ru = s.ram.total - s.ram.avail, rp = Math.round(ru / s.ram.total * 100), su = s.storage.total - s.storage.free, sp = s.storage.total ? Math.round(su / s.storage.total * 100) : 0;
+    h += '<div class="sec">' + tt('میموری اور اسٹوریج', 'MEMORY AND STORAGE') + '</div><div class="card"><div class="kv"><span>RAM</span><b>' + fmt(ru) + ' / ' + fmt(s.ram.total) + ' (' + rp + '%)</b></div><div class="mbar"><i style="width:' + rp + '%' + (rp > 85 ? ';background:var(--red)' : '') + '"></i></div>' +
+      '<div class="kv" style="margin-top:12px"><span>' + tt('اسٹوریج', 'Storage') + '</span><b>' + fmt(su) + ' / ' + fmt(s.storage.total) + ' (' + sp + '%)</b></div><div class="mbar"><i style="width:' + sp + '%' + (sp > 90 ? ';background:var(--red)' : '') + '"></i></div></div>';
+    var d = s.device, up = dur(d.uptime);
+    h += '<div class="sec">' + tt('فون کی معلومات', 'DEVICE') + '</div><div class="card"><div class="kv"><span>' + tt('ماڈل', 'Model') + '</span><b>' + (d.brand ? d.brand.charAt(0).toUpperCase() + d.brand.slice(1) + ' ' : '') + d.model + '</b></div><div class="kv"><span>Android</span><b>' + d.android + ' (API ' + d.sdk + ')</b></div><div class="kv"><span>' + tt('پروسیسر کور', 'CPU cores') + '</span><b>' + d.cores + (d.abi ? ' · ' + d.abi : '') + '</b></div><div class="kv"><span>' + tt('آن ہوئے کو', 'Uptime') + '</span><b>' + up + '</b></div><div class="kv"><span>' + tt('نیٹ ورک', 'Network') + '</span><b>' + ({ wifi: 'Wi-Fi', mobile: tt('موبائل ڈیٹا', 'Mobile data'), none: tt('بند', 'Offline'), other: tt('دیگر', 'Other') }[s.net] || '–') + '</b></div></div>';
+    h += '<div class="sec">' + tt('ایپس کا استعمال', 'APP USAGE') + '</div>';
+    if (M.ug === false) {
+      h += '<div class="card center"><div style="font-size:40px">📊</div><h2 style="font-size:18px">' + T('Usage access کی اجازت', 'Usage access needed') + '</h2><p class="mut" style="margin-top:6px">' + tt('اسکرین ٹائم اور ڈیٹا کا استعمال دیکھنے کے لیے کھلنے والی سکرین میں Cleanova کو آن کریں، پھر واپس آ جائیں۔ یہ معلومات فون سے باہر نہیں جاتیں۔', 'To see screen time and data use, turn Cleanova on in the screen that opens, then come back. This data never leaves your phone.') + '</p><button class="btn" id="uallow">' + T('اجازت دیں', 'Grant access') + '</button></div>';
+    } else if (M.usage) {
+      var u = M.usage, tot = 0; u.days.forEach(function (x) { tot += x; });
+      h += '<div class="card"><div class="kv"><span>' + tt('آج کا اسکرین ٹائم', 'Screen time today') + '</span><b style="font-size:18px;color:var(--acc)">' + dur(u.days[6]) + '</b></div><div class="kv"><span>' + tt('روزانہ اوسط (7 دن)', 'Daily average (7 days)') + '</span><b>' + dur(tot / 7) + '</b></div>' + (u.unlocks ? '<div class="kv"><span>' + tt('آج فون کھولا', 'Unlocks today') + '</span><b>' + u.unlocks + '</b></div>' : '') + monBars(u.days, function (v) { return Math.round(v / 360000) / 10 + 'h'; }) + '</div>';
+      var mx = Math.max.apply(null, u.apps.map(function (a) { return a.week; }).concat([1]));
+      h += '<div class="card"><div class="sec" style="margin:0 0 8px">' + tt('سب سے زیادہ استعمال (7 دن)', 'MOST USED (7 DAYS)') + '</div>' + appRows(u.apps.map(function (a) { return { label: a.label, pkg: a.pkg, icon: a.icon, week: a.week, v: a.week }; }), 'week', mx) + '</div>';
+    } else if (M.usageErr) { h += '<div class="card mut">' + tt('استعمال کی معلومات نہیں مل سکیں۔', 'Could not read app usage.') + '</div>'; }
+    else if (M.ug) { h += '<div class="card center"><div class="spin"></div></div>'; }
+    if (M.ug && M.data) {
+      var dd = M.data, wt = 0, mt = 0; dd.wifi.forEach(function (x) { wt += x; }); dd.mobile.forEach(function (x) { mt += x; });
+      var both = dd.wifi.map(function (x, i) { return x + dd.mobile[i]; });
+      h += '<div class="sec">' + tt('ڈیٹا کا استعمال', 'DATA USAGE') + '</div><div class="card"><div class="kv"><span>' + tt('آج Wi-Fi', 'Wi-Fi today') + '</span><b>' + fmt(dd.wifi[6]) + '</b></div><div class="kv"><span>' + tt('آج موبائل ڈیٹا', 'Mobile data today') + '</span><b>' + fmt(dd.mobile[6]) + '</b></div><div class="kv"><span>' + tt('7 دن: Wi-Fi / موبائل', '7 days: Wi-Fi / mobile') + '</span><b>' + fmt(wt) + ' / ' + fmt(mt) + '</b></div>' + monBars(both, function (v) { return fmt(v).replace(' ', ''); }, 'var(--acc2)') + '</div>';
+      var dm = Math.max.apply(null, dd.apps.map(function (a) { return a.week; }).concat([1]));
+      h += '<div class="card"><div class="sec" style="margin:0 0 8px">' + tt('سب سے زیادہ ڈیٹا (7 دن)', 'TOP DATA USERS (7 DAYS)') + '</div>' + appRows(dd.apps.map(function (a) { return { label: a.label, pkg: a.pkg, icon: a.icon, week: a.week, v: a.week }; }), 'week', dm, true) + '</div>';
+    }
+    h += '<p class="mut" style="font-size:12px;margin:14px 4px">' + tt('نوٹ: اعداد و شمار اینڈرائیڈ سسٹم سے لیے جاتے ہیں، کچھ فونز پر کچھ قدریں دستیاب نہیں ہوتیں۔', 'Note: values come from Android and some phones do not report every reading.') + '</p>' + footer();
+    $('#monroot').innerHTML = h;
+    var ua = $('#uallow'); if (ua) ua.onclick = function () { MP.usageRequest().catch(function () { /* settings unavailable */ }); };
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && S.view === 'monitor' && S.mon && S.mon.ug === false) { S.mon.ug = undefined; vMonitor(); } });
+
   function vContacts() {
     setTop(T('ڈپلیکیٹ کانٹیکٹس', 'Duplicate contacts')); setBottom('');
     var c = S.ct = S.ct || { st: 'init', groups: [], sel: {}, act: 'merge' };
