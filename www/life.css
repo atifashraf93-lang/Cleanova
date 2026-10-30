@@ -79,3 +79,5 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .gl{width:40px;height:50px;border-radius:8px 8px 14px 14px;border:2px solid var(--line);display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px;color:var(--mut)}
 .gl.f{background:linear-gradient(var(--acc2),var(--acc));border-color:var(--acc);color:var(--accfg)}
 .sel{width:100%;min-height:48px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:6px 10px;font:inherit;margin-top:6px}
+
+.mm svg{width:100%;height:100%;display:block}
