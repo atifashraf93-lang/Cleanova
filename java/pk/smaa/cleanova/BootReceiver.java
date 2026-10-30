@@ -10,9 +10,14 @@ public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context c, Intent i) {
         try {
-            if (!c.getSharedPreferences(MonitorService.PREFS, Context.MODE_PRIVATE).getBoolean("on", false)) return;
-            Intent s = new Intent(c, MonitorService.class);
-            if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(s); else c.startService(s);
+            if (c.getSharedPreferences(MonitorService.PREFS, Context.MODE_PRIVATE).getBoolean("on", false)) {
+                Intent s = new Intent(c, MonitorService.class);
+                if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(s); else c.startService(s);
+            }
+            if (c.getSharedPreferences(TrackService.PREFS, Context.MODE_PRIVATE).getBoolean("auto", false)) {
+                Intent s = new Intent(c, TrackService.class);
+                if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(s); else c.startService(s);
+            }
         } catch (Throwable t) { /* system may refuse; the app restarts it when opened */ }
     }
 }

@@ -212,7 +212,7 @@
     { id: 'home', ic: '🏠', ur: 'ہوم', en: 'Home' }, { id: 'overview', ic: '📊', ur: 'نتیجہ', en: 'Results' },
     { id: 'monitor', ic: '📈', ur: 'مانیٹر', en: 'Monitor' }, { id: 'trash', ic: '🗑', ur: 'ٹریش', en: 'Trash' }, { id: 'settings', ic: '⚙', ur: 'ترتیبات', en: 'Settings' }
   ];
-  var TAB_OF = { home: 'home', overview: 'overview', dups: 'overview', review: 'overview', list: 'overview', wa: 'overview', trash: 'trash', settings: 'settings', done: 'home', contacts: 'home', monitor: 'monitor', trips: 'home', trip: 'home' };
+  var TAB_OF = { home: 'home', overview: 'overview', dups: 'overview', review: 'overview', list: 'overview', wa: 'overview', trash: 'trash', settings: 'settings', done: 'home', contacts: 'home', monitor: 'monitor', trips: 'home', trip: 'home', days: 'home', day: 'home' };
   function go(view, extra) { S.back.push({ view: S.view, review: S.review, list: S.list }); S.view = view; if (extra !== undefined) { if (view === 'review') S.review = extra; else S.list = extra; } S.limit = 150; render(); }
   function goBack() {
     if (!$('#modal').hidden) { $('#modal').hidden = true; return true; }
@@ -258,9 +258,10 @@
   function footer() { return '<div class="foot">' + tt('سب کچھ آپ کے فون میں ہوتا ہے، کچھ اپلوڈ نہیں ہوتا۔', 'Everything stays on your phone. Nothing is uploaded.') + '<br>Developed by <b>SMAA</b></div>'; }
 
   function render() {
-    var fn = { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone, contacts: vContacts, monitor: vMonitor, trips: vTrips, trip: vTrip }[S.view] || vHome;
+    var fn = { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone, contacts: vContacts, monitor: vMonitor, trips: vTrips, trip: vTrip, days: vDays, day: vDay }[S.view] || vHome;
     if (S.view !== 'monitor') clearMon();
     if (S.view !== 'trips') clearTrip();
+    if (S.view !== 'days') clearDays();
     $('#body').scrollTop = 0;
     $('#body').onclick = null;
     setNav(S.view !== 'gate' && S.view !== 'scanning');
@@ -293,6 +294,7 @@
   }
   function openTool(id) {
     if (id === 'contacts') { S.ct = { st: 'init', groups: [], sel: {}, act: 'merge' }; go('contacts'); return; }
+    if (id === 'days') { S.dl = null; go('days'); return; }
     if (id === 'trips') { S.tr = null; go('trips'); return; }
     if (id === 'monitor') { S.mon = null; go('monitor'); return; }
     if (id === 'trash') { loadTrash().then(function () { S.back = []; go('trash'); }); return; }
@@ -322,7 +324,7 @@
       tile('old', '📥', 'پرانی ڈاؤن لوڈز', 'Old downloads', sub.old, sz(sumItems(S.x.old.filter(function (i) { return older(i, 30); })))) +
       tile('contacts', '👥', 'ڈپلیکیٹ کانٹیکٹس', 'Duplicate contacts', sub.contacts, '') +
       tile('monitor', '📈', 'فون مانیٹر', 'Phone monitor', ['بیٹری، RAM، استعمال', 'Battery, RAM, usage'], '') +
-      tile('trips', '🧭', 'سفر کا ریکارڈ', 'Travel log', ['راستہ، فاصلہ، وقت', 'Route, distance, time'], '') +
+      tile('days', '🧭', 'سفر کا ریکارڈ', 'Travel log', ['روزانہ، نقشہ، قدم', 'Daily, map, steps'], '') +
       tile('trash', '♻', 'ٹریش', 'Trash', sub.trash, '') + '</div>' + footer();
     $('#scanbtn').onclick = startScan;
     [].forEach.call(document.querySelectorAll('[data-open]'), function (b) { b.onclick = function () { openTool(b.dataset.open); }; });
@@ -620,6 +622,120 @@
   }
 
   /* ---------- duplicate contacts (merge by default, always backed up first) ---------- */
+  /* ---------- daily movement log with map ---------- */
+  var dayTimer = 0, pnQ = [], pnBusy = false, PN = {};
+  function clearDays() { if (dayTimer) { clearInterval(dayTimer); dayTimer = 0; } }
+  var WD_UR = ['اتوار', 'پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ'], WD_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function keyDate(k) { return new Date(+k.slice(0, 4), +k.slice(4, 6) - 1, +k.slice(6, 8)); }
+  function dayLabel(k) { var d = keyDate(k), t = new Date(), y = new Date(Date.now() - 86400000), same = function (a, b) { return a.toDateString() === b.toDateString(); }; if (same(d, t)) return tt('آج', 'Today'); if (same(d, y)) return tt('کل', 'Yesterday'); return (PREF.lang === 'en' ? WD_EN : WD_UR)[d.getDay()] + ' · ' + d.getDate() + '/' + (d.getMonth() + 1); }
+  function pkey(lat, lon) { return lat.toFixed(3) + ',' + lon.toFixed(3); }
+  function pname(lat, lon, again) {
+    var k = pkey(lat, lon); if (PN[k] !== undefined) return PN[k];
+    PN[k] = ''; pnQ.push([lat, lon, k, again]); pnRun(); return '';
+  }
+  function pnRun() {
+    if (pnBusy || !pnQ.length) return; pnBusy = true;
+    var j = pnQ.shift();
+    TP.placeName({ lat: j[0], lon: j[1] }).then(function (r) { PN[j[2]] = (r && r.name) || ''; }).catch(function () { /* offline */ }).then(function () { pnBusy = false; if (S.view === 'day' && PN[j[2]]) { S.dayRedraw && S.dayRedraw(); } pnRun(); });
+  }
+  function nm(lat, lon) { var n = pname(lat, lon); return n || (lat.toFixed(4) + ', ' + lon.toFixed(4)); }
+  function gmaps(o) {
+    var u = o.to ? 'https://www.google.com/maps/dir/?api=1&origin=' + o.from[0] + ',' + o.from[1] + '&destination=' + o.to[0] + ',' + o.to[1] : 'https://www.google.com/maps/search/?api=1&query=' + o.at[0] + ',' + o.at[1];
+    TP.openUrl({ url: u }).catch(function () { window.open(u, '_blank'); });
+  }
+  function vDays(soft) {
+    setTop(T('روزانہ سفر', 'Daily movement'));
+    var Dd = S.dl = S.dl || {};
+    if (!soft) {
+      clearDays();
+      var load = function () {
+        TP.autoStatus().then(function (r) { Dd.auto = r; if (S.view === 'days') vDays(true); }).catch(function () { Dd.auto = { on: false, loc: false }; });
+        TP.dayList({ days: 60 }).then(function (r) { Dd.days = (r && r.days) || []; if (S.view === 'days') vDays(true); }).catch(function () { Dd.days = []; });
+      };
+      load(); dayTimer = setInterval(function () { if (S.view !== 'days') return clearDays(); load(); }, 15000);
+    }
+    if (!soft || !$('#dyroot')) $('#body').innerHTML = '<div id="dyroot"></div>';
+    var root = $('#dyroot'), au = Dd.auto, days = Dd.days;
+    if (!au || !days) { root.innerHTML = '<div class="card center"><div class="spin"></div></div>'; return; }
+    var h = '';
+    if (!au.on) {
+      h += '<div class="card center" style="margin-top:6px"><div style="font-size:44px">🧭</div><h2 style="font-size:19px">' + T('روزانہ نقل و حرکت کا ریکارڈ', 'Daily movement record') + '</h2><p class="mut" style="margin-top:6px">' + tt('آن کریں تو ایپ خود ریکارڈ رکھتی ہے کہ آپ کہاں سے کہاں گئے، کتنا فاصلہ طے کیا، کتنا پیدل چلے اور کتنے قدم۔ سب کچھ صرف آپ کے فون میں رہتا ہے۔', 'Turn it on and the app keeps a record of where you went, how far, how much on foot and your steps. Everything stays on your phone.') + '</p><button class="btn" id="dyOn">' + T('روزانہ ریکارڈ شروع کریں', 'Start daily record') + '</button></div>';
+    } else {
+      h += '<div class="card" style="margin-top:6px"><div class="kv"><span>' + tt('روزانہ ریکارڈ', 'Daily record') + '</span><b style="color:var(--acc)">' + tt('جاری ● ', 'ON ● ') + '</b></div>' +
+        (!au.bg ? '<p class="mut" style="font-size:12.5px;margin:6px 0">' + tt('⚠ ایپ بند ہونے پر بھی ریکارڈ کے لیے لوکیشن میں "ہر وقت اجازت دیں" (Allow all the time) چنیں۔', '⚠ For recording while the app is closed, choose "Allow all the time" for Location.') + '</p><button class="btn" id="dyBg" style="min-height:44px;font-size:15px">' + T('لوکیشن کی ترتیب کھولیں', 'Open location setting') + '</button>' : '') +
+        (!au.activity ? '<p class="mut" style="font-size:12.5px;margin:6px 0">' + tt('قدم گننے کے لیے "جسمانی سرگرمی" کی اجازت دیں۔', 'Allow "Physical activity" to count steps.') + '</p><button class="btn" id="dyAct" style="min-height:44px;font-size:15px">' + T('اجازت دیں', 'Allow') + '</button>' : '') +
+        '<button class="btn" id="dyOff" style="background:var(--card2);color:var(--text);box-shadow:none;border:1px solid var(--line);min-height:44px;font-size:15px">' + T('ریکارڈ بند کریں', 'Stop recording') + '</button></div>';
+    }
+    var todayK = (function () { var d = new Date(); return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0'); })();
+    var today = days.filter(function (x) { return x.date === todayK; })[0], wk = 0, wkW = 0, wkS = 0, mo = 0, moS = 0, nowD = new Date(), weekAgo = Date.now() - 7 * 86400000;
+    days.forEach(function (x) { var d = keyDate(x.date); if (d.getTime() >= weekAgo) { wk += x.distance; wkW += x.walk; wkS += x.steps; } if (d.getMonth() === nowD.getMonth() && d.getFullYear() === nowD.getFullYear()) { mo += x.distance; moS += x.steps; } });
+    var td = today || { distance: 0, walk: 0, vehicle: 0, steps: au.stepsToday || 0, movingSec: 0 };
+    h += '<div class="hero" style="display:block"><div class="k">' + T('آج', 'Today') + '</div><div class="big">' + km(td.distance) + '</div><div class="k" style="font-size:13.5px;margin-top:6px">🚶 ' + km(td.walk) + ' · 🚗 ' + km(td.vehicle) + ' · 👣 ' + Math.round(td.steps || au.stepsToday || 0).toLocaleString('en') + ' · ⏱ ' + dur(td.movingSec * 1000) + '</div>' + (today ? '<button class="btn" id="dyToday">' + T('نقشے پر آج کا راستہ', "Today's route on map") + '</button>' : '') + '</div>';
+    h += '<div class="card"><div class="kv"><span>' + tt('پچھلے 7 دن کل', 'Last 7 days') + '</span><b>' + km(wk) + '</b></div><div class="kv"><span>🚶 ' + tt('پیدل (7 دن)', 'On foot (7 days)') + '</span><b>' + km(wkW) + ' · ' + Math.round(wkS).toLocaleString('en') + ' 👣</b></div><div class="kv"><span>' + tt('اس مہینے کل', 'This month') + '</span><b>' + km(mo) + ' · ' + Math.round(moS).toLocaleString('en') + ' 👣</b></div></div>';
+    h += '<div class="sec">' + tt('دن بہ دن', 'DAY BY DAY') + '</div>';
+    if (!days.length) h += '<div class="card mut center">' + tt('ابھی کوئی ریکارڈ نہیں۔ ریکارڈ شروع کریں اور چند منٹ چلیں پھریں۔', 'No records yet. Start recording and move around for a few minutes.') + '</div>';
+    days.forEach(function (x) { h += '<button class="cat" data-day="' + x.date + '"><span><b>' + dayLabel(x.date) + '</b><small class="e" style="display:block">🚶 ' + km(x.walk) + ' · 🚗 ' + km(x.vehicle) + ' · 👣 ' + Math.round(x.steps).toLocaleString('en') + '</small></span><span style="direction:ltr;font-family:system-ui,sans-serif">' + km(x.distance) + '</span></button>'; });
+    h += '<button class="cat" id="dyTrips" style="margin-top:14px"><span>📍 <b>' + tt('ٹرپس (ہاتھ سے شروع/ختم)', 'Trips (start/end by hand)') + '</b></span><span>›</span></button>';
+    h += '<p class="mut" style="font-size:12px;margin:14px 4px">' + tt('پیدل اور گاڑی کا فرق رفتار سے لگایا جاتا ہے (تقریباً 8 km/h سے کم = پیدل)، اس لیے سائیکل یا تیز دوڑ میں کچھ فرق آ سکتا ہے۔ قدم فون کے قدم شمار کرنے والے سینسر سے آتے ہیں۔', 'Walking vs vehicle is judged by speed (under about 8 km/h = on foot), so cycling or fast running can be misjudged. Steps come from the phone step sensor.') + '</p>' + footer();
+    root.innerHTML = h;
+    var on = $('#dyOn'); if (on) on.onclick = function () {
+      TP.locRequest().then(function (r) { if (!(r && r.granted)) { toast('لوکیشن کی اجازت نہیں ملی', 'Location permission denied'); throw new Error('x'); } return TP.permRequest({ which: 'activity' }); })
+        .then(function () { return TP.permRequest({ which: 'bgloc' }); }).then(function () { return TP.autoSet({ on: true }); })
+        .then(function () { toast('روزانہ ریکارڈ شروع', 'Daily record started'); vDays(); }).catch(function () { /* declined */ });
+    };
+    var off = $('#dyOff'); if (off) off.onclick = function () { TP.autoSet({ on: false }).then(function () { vDays(); }); };
+    var bg = $('#dyBg'); if (bg) bg.onclick = function () { TP.permRequest({ which: 'bgloc' }).then(function () { vDays(); }); };
+    var ac = $('#dyAct'); if (ac) ac.onclick = function () { TP.permRequest({ which: 'activity' }).then(function () { vDays(); }); };
+    var tb = $('#dyToday'); if (tb) tb.onclick = function () { S.day = { date: todayK }; go('day'); };
+    var tr = $('#dyTrips'); if (tr) tr.onclick = function () { S.tr = null; go('trips'); };
+    [].forEach.call(document.querySelectorAll('[data-day]'), function (b) { b.onclick = function () { S.day = { date: b.dataset.day }; go('day'); }; });
+  }
+  var mapObj = null;
+  function vDay() {
+    var D = S.day = S.day || {};
+    setTop(T('دن کا نقشہ', 'Day map'));
+    if (!D.det && !D.loading) { D.loading = true; TP.dayDetail({ date: D.date }).then(function (r) { D.det = r; D.loading = false; if (S.view === 'day') vDay(); }).catch(function () { D.loading = false; D.det = { route: [], stops: [], journeys: [], distance: 0, walk: 0, vehicle: 0, steps: 0, movingSec: 0 }; if (S.view === 'day') vDay(); }); }
+    var d = D.det;
+    if (!d) { $('#body').innerHTML = '<div class="card center"><div class="spin"></div></div>'; return; }
+    var rt = d.route || [], style = D.style || store('mapStyle') || 'osm';
+    var h = '<div class="card" style="margin-top:6px;padding:0;overflow:hidden"><div id="map" style="height:330px;border-radius:20px 20px 0 0;background:#e8e4dc"></div>' +
+      '<div style="position:absolute;margin-top:-100px;inset-inline-end:10px;display:flex;flex-direction:column;gap:6px" id="mapbtns"><button class="iconbtn" id="mZin" style="font-size:22px">+</button><button class="iconbtn" id="mZout" style="font-size:22px">−</button><button class="iconbtn" id="mFit" aria-label="fit">⌖</button></div>' +
+      '<div style="padding:10px 12px"><div class="chips" style="margin-top:0"><button class="chip' + (style === 'osm' ? ' on' : '') + '" data-ms="osm">' + tt('عام نقشہ', 'Standard') + '</button><button class="chip' + (style === 'carto' ? ' on' : '') + '" data-ms="carto">' + tt('ہلکا نقشہ', 'Light') + '</button><button class="chip" id="mKhi">' + tt('کراچی آف لائن', 'Save Karachi offline') + '</button></div>' +
+      '<div class="mut" style="font-size:12px;margin-top:6px"><span style="color:#1a73e8">┅</span> ' + tt('پیدل', 'On foot') + ' &nbsp; <span style="color:#e5484d">━</span> ' + tt('گاڑی', 'Vehicle') + ' &nbsp; <span style="color:#34c48b">●</span> ' + tt('آغاز', 'Start') + ' &nbsp; <span style="color:#ef7b6c">●</span> ' + tt('اختتام', 'End') + ' &nbsp; <span style="color:#f59f00">●</span> ' + tt('ٹھہراؤ', 'Stop') + '</div><div id="mKhiP" class="mut" style="font-size:12px"></div></div></div>';
+    h += '<div class="card"><b style="font-size:17px">' + dayLabel(D.date) + '</b><div class="kv" style="margin-top:6px"><span>' + tt('کل فاصلہ', 'Total distance') + '</span><b>' + km(d.distance) + '</b></div><div class="kv"><span>🚶 ' + tt('پیدل', 'On foot') + '</span><b>' + km(d.walk) + '</b></div><div class="kv"><span>🚗 ' + tt('گاڑی میں', 'By vehicle') + '</span><b>' + km(d.vehicle) + '</b></div><div class="kv"><span>👣 ' + tt('قدم', 'Steps') + '</span><b>' + Math.round(d.steps || 0).toLocaleString('en') + '</b></div><div class="kv"><span>⏱ ' + tt('چلنے کا وقت', 'Time moving') + '</span><b>' + dur(d.movingSec * 1000) + '</b></div></div>';
+    if (d.journeys && d.journeys.length) {
+      h += '<div class="sec">' + tt('کہاں سے کہاں', 'WHERE FROM, WHERE TO') + '</div>' + d.journeys.map(function (j, i) {
+        return '<div class="card"><div style="font-size:15px;line-height:1.9"><b>' + nm(j.fromLat, j.fromLon) + '</b> ← <b>' + nm(j.toLat, j.toLon) + '</b></div><div class="mut" style="font-size:12.5px;direction:ltr;text-align:start">' + tclock(j.t0) + ' – ' + tclock(j.t1) + ' · ' + km(j.walk + j.vehicle) + ' · ' + (j.walk > j.vehicle ? '🚶' : '🚗') + '</div><button class="chip" data-gm="' + i + '" style="margin-top:6px">' + tt('Google Maps میں راستہ', 'Directions in Google Maps') + '</button></div>';
+      }).join('');
+    }
+    if (d.stops && d.stops.length) {
+      h += '<div class="sec">' + tt('ٹھہراؤ (10 منٹ سے زیادہ)', 'STOPS (10+ MINUTES)') + '</div><div class="card">' + d.stops.map(function (x, i) { return '<div class="kv"><span>📍 ' + nm(x.lat, x.lon) + '</span><b>' + tclock(x.t0) + ' – ' + tclock(x.t1) + ' · ' + dur(x.t1 - x.t0) + ' <button class="chip" data-gs="' + i + '" style="padding:0 8px">↗</button></b></div>'; }).join('') + '</div>';
+    }
+    h += '<div class="card"><button class="btn" id="dyDel" style="background:var(--red);color:#fff;box-shadow:none;margin-top:0">' + T('اس دن کا ریکارڈ حذف کریں', 'Delete this day') + '</button></div>' + footer();
+    $('#body').innerHTML = h;
+    /* map */
+    var pts = rt.map(function (p) { return [p.lat, p.lon]; });
+    mapObj = new window.TileMap($('#map'), { style: style, lat: 24.8607, lon: 67.0011, zoom: 11 });
+    var draw = function () {
+      var layers = [], cur = null;
+      rt.forEach(function (p, i) { if (!i) return; var m = p.m; if (!m) { cur = null; return; } if (!cur || cur.m !== m) { cur = { type: 'line', m: m, pts: [[rt[i - 1].lat, rt[i - 1].lon]], color: m === 1 ? '#1a73e8' : '#e5484d', w: m === 1 ? 4 : 5, dash: m === 1 ? [1, 8] : null }; layers.push(cur); } cur.pts.push([p.lat, p.lon]); });
+      (d.stops || []).forEach(function (x) { layers.push({ type: 'dot', lat: x.lat, lon: x.lon, color: '#f59f00', r: 8, label: PN[pkey(x.lat, x.lon)] || (pname(x.lat, x.lon), '') }); });
+      if (rt.length) { layers.push({ type: 'dot', lat: rt[0].lat, lon: rt[0].lon, color: '#34c48b', r: 8 }); layers.push({ type: 'dot', lat: rt[rt.length - 1].lat, lon: rt[rt.length - 1].lon, color: '#ef7b6c', r: 8 }); }
+      mapObj.setLayers(layers);
+    };
+    S.dayRedraw = function () { if (S.view !== 'day') return; draw(); };
+    draw(); if (pts.length) mapObj.fit(pts, 36);
+    $('#mZin').onclick = function () { mapObj.zoomBy(1); }; $('#mZout').onclick = function () { mapObj.zoomBy(-1); }; $('#mFit').onclick = function () { if (pts.length) mapObj.fit(pts, 36); else { mapObj.lat = 24.8607; mapObj.lon = 67.0011; mapObj.z = 11; mapObj.draw(); } };
+    [].forEach.call(document.querySelectorAll('[data-ms]'), function (b) { b.onclick = function () { D.style = b.dataset.ms; store('mapStyle', D.style); mapObj.setStyle(D.style); [].forEach.call(document.querySelectorAll('[data-ms]'), function (x) { x.classList.toggle('on', x === b); }); }; });
+    $('#mKhi').onclick = function () {
+      var p = $('#mKhiP'), b = $('#mKhi'); b.disabled = true;
+      window.TileMap.preload(D.style || style, [25.08, 66.88, 24.78, 67.36], 10, 14, function (i, n) { p.textContent = tt('محفوظ ہو رہا ہے: ', 'Saving: ') + i + ' / ' + n; }).then(function (r) { p.textContent = tt('کراچی کا نقشہ محفوظ ہو گیا (' + r.ok + ' ٹائلز)', 'Karachi map saved (' + r.ok + ' tiles)'); b.disabled = false; });
+    };
+    [].forEach.call(document.querySelectorAll('[data-gm]'), function (b) { b.onclick = function () { var j = d.journeys[+b.dataset.gm]; gmaps({ from: [j.fromLat, j.fromLon], to: [j.toLat, j.toLon] }); }; });
+    [].forEach.call(document.querySelectorAll('[data-gs]'), function (b) { b.onclick = function () { var x = d.stops[+b.dataset.gs]; gmaps({ at: [x.lat, x.lon] }); }; });
+    $('#dyDel').onclick = function () { var b = $('#dyDel'); if (!b.dataset.sure) { b.dataset.sure = '1'; b.innerHTML = T('تصدیق کے لیے دوبارہ دبائیں', 'Tap again to confirm'); return; } TP.dayDelete({ date: D.date }).then(function () { S.day = null; if (S.dl) S.dl.days = null; goBack(); }); };
+  }
+
   /* ---------- personal trip log ---------- */
   var TP = (Cap && Cap.Plugins && Cap.Plugins.Travel && !window.CLEANOVA_MOCK) ? Cap.Plugins.Travel : window.TravelMock;
   var tripTimer = 0;

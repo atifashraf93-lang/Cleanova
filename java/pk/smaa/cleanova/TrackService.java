@@ -5,34 +5,53 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.usage.NetworkStats;
+import android.app.usage.NetworkStatsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
-import android.app.usage.NetworkStats;
-import android.app.usage.NetworkStatsManager;
 import android.net.ConnectivityManager;
 import android.os.Build;
-import android.telephony.TelephonyManager;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.telephony.TelephonyManager;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
-/** Foreground service that writes the user's own trip route (time, lat, lon, accuracy, speed) to a file on the phone. */
-public class TrackService extends Service implements LocationListener {
+/**
+ * Foreground service that keeps the user's own movement log on the phone.
+ * - Daily log (when "auto" is on): points are appended to days/yyyyMMdd.csv, GPS is switched on only while moving.
+ * - Manual trip: points are also appended to trips/ID.csv and GPS stays on.
+ * - Steps: counted with the phone's step sensor (if allowed) and stored per day.
+ */
+public class TrackService extends Service implements LocationListener, SensorEventListener {
     static final String PREFS = "cl.trip";
     static final String CH = "cl_trip";
     private LocationManager lm;
-    private File out;
+    private SensorManager sm;
+    private File tripOut;
     private Location last;
-    private long lastCheck = 0;
-    private boolean notifiedData = false, notifiedRoam = false;
+    private long lastWrite = 0, lastMove = 0, lastCheck = 0, lastStepSave = 0;
+    private boolean gpsOn = false, netOn = false, notifiedData = false, notifiedRoam = false;
+    private double stepAcc = 0;
+    private float lastRaw = -1;
+    private String stepDay = "";
 
     static File dir(Context c) { File d = new File(c.getFilesDir(), "trips"); if (!d.exists()) d.mkdirs(); return d; }
+    static File daysDir(Context c) { File d = new File(c.getFilesDir(), "days"); if (!d.exists()) d.mkdirs(); return d; }
+    static String dayKey(long t) { return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date(t)); }
 
     @Override public IBinder onBind(Intent i) { return null; }
 
@@ -40,46 +59,87 @@ public class TrackService extends Service implements LocationListener {
     public int onStartCommand(Intent intent, int flags, int startId) {
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         long id = sp.getLong("active", 0);
-        if (id == 0) { stopSelf(); return START_NOT_STICKY; }
-        out = new File(dir(this), id + ".csv");
+        boolean auto = sp.getBoolean("auto", false);
+        if (id == 0 && !auto) { stopSelf(); return START_NOT_STICKY; }
+        tripOut = id != 0 ? new File(dir(this), id + ".csv") : null;
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            nm.createNotificationChannel(new NotificationChannel(CH, "Trip recording", NotificationManager.IMPORTANCE_LOW));
+            nm.createNotificationChannel(new NotificationChannel(CH, "Movement log", NotificationManager.IMPORTANCE_LOW));
         }
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CH) : new Notification.Builder(this);
         b.setSmallIcon(android.R.drawable.ic_menu_mylocation).setOngoing(true)
-            .setContentTitle("Cleanova · سفر ریکارڈ ہو رہا ہے")
-            .setContentText("Recording your trip on this phone only · ریکارڈ صرف آپ کے فون میں");
+            .setContentTitle(id != 0 ? "Cleanova · سفر ریکارڈ ہو رہا ہے" : "Cleanova · روزانہ نقل و حرکت")
+            .setContentText("Saved on this phone only · ریکارڈ صرف آپ کے فون میں");
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (open != null) b.setContentIntent(PendingIntent.getActivity(this, 0, open, Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0));
         try {
             if (Build.VERSION.SDK_INT >= 29) startForeground(2, b.build(), 8);
             else startForeground(2, b.build());
         } catch (Throwable t) { stopSelf(); return START_NOT_STICKY; }
-        if (lm == null) {
-            lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-            try {
-                if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 15000L, 15f, this);
-                if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 30000L, 50f, this);
-            } catch (SecurityException e) { stopSelf(); return START_NOT_STICKY; }
-        }
+        if (lm == null) lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        try {
+            if (!netOn && lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) { lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 60000L, 60f, this); netOn = true; }
+            if (id != 0) setGps(true); else if (!gpsOn) setGps(false);
+        } catch (SecurityException e) { stopSelf(); return START_NOT_STICKY; }
+        startSteps();
         return START_STICKY;
     }
 
+    private void setGps(boolean on) {
+        try {
+            if (on && !gpsOn && lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) { lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 15000L, 15f, this); gpsOn = true; }
+            else if (!on && gpsOn) { /* only the GPS listener is dropped, network stays */
+                lm.removeUpdates(this); gpsOn = false; netOn = false;
+                if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) { lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 60000L, 60f, this); netOn = true; }
+            }
+        } catch (SecurityException e) { /* permission lost */ }
+    }
+
+    private void startSteps() {
+        try {
+            if (sm != null) return;
+            if (Build.VERSION.SDK_INT >= 29 && checkSelfPermission("android.permission.ACTIVITY_RECOGNITION") != PackageManager.PERMISSION_GRANTED) return;
+            sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+            Sensor s = sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+            if (s != null) sm.registerListener(this, s, SensorManager.SENSOR_DELAY_NORMAL);
+        } catch (Throwable t) { /* no step sensor */ }
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent e) {
+        try {
+            float raw = e.values[0];
+            SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+            String day = dayKey(System.currentTimeMillis());
+            if (!day.equals(stepDay)) { stepDay = day; stepAcc = sp.getFloat("steps_" + day, 0f); }
+            if (lastRaw < 0) lastRaw = sp.getFloat("lastRaw", -1f);
+            if (lastRaw >= 0) { double delta = raw >= lastRaw ? raw - lastRaw : raw; if (delta < 5000) stepAcc += delta; }
+            lastRaw = raw;
+            long now = System.currentTimeMillis();
+            if (now - lastStepSave > 20000L) { lastStepSave = now; sp.edit().putFloat("steps_" + day, (float) stepAcc).putFloat("lastRaw", raw).apply(); }
+        } catch (Throwable t) { /* ignore */ }
+    }
+
+    @Override public void onAccuracyChanged(Sensor s, int a) { }
+
     @Override
     public void onLocationChanged(Location l) {
-        if (out == null || l == null) return;
+        if (l == null) return;
         if (l.hasAccuracy() && l.getAccuracy() > 80f) return;
+        long now = System.currentTimeMillis();
+        boolean moved = last == null || l.distanceTo(last) >= 12f;
+        boolean fast = l.hasSpeed() && l.getSpeed() > 1.0f;
+        if (moved && last != null && l.distanceTo(last) > 60f || fast) { lastMove = now; setGps(true); }
+        else if (gpsOn && tripOut == null && now - lastMove > 8 * 60 * 1000L) setGps(false);
+        if (last != null && !moved && now - lastWrite < 5 * 60 * 1000L) return;   /* standing still: one point every 5 minutes */
         if (last != null && l.getTime() - last.getTime() < 8000L) return;
-        last = l;
-        try {
-            FileWriter w = new FileWriter(out, true);
-            boolean roam = false;
-            try { TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE); roam = tm != null && tm.isNetworkRoaming(); } catch (Throwable t) { /* unknown */ }
-            w.write(l.getTime() + "," + l.getLatitude() + "," + l.getLongitude() + "," + (l.hasAccuracy() ? Math.round(l.getAccuracy()) : 0) + "," + (l.hasSpeed() ? String.format(java.util.Locale.US, "%.1f", l.getSpeed()) : "0") + "," + (roam ? 1 : 0) + "\n");
-            if (roam && !notifiedRoam) { notifiedRoam = true; alert(21, "رومنگ آن ہے · Roaming is ON", "موبائل ڈیٹا مہنگا ہو سکتا ہے · Mobile data may be expensive"); }
-            w.close();
-        } catch (Throwable t) { /* storage full */ }
+        last = l; lastWrite = now;
+        boolean roam = false;
+        try { TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE); roam = tm != null && tm.isNetworkRoaming(); } catch (Throwable t) { /* unknown */ }
+        String line = l.getTime() + "," + l.getLatitude() + "," + l.getLongitude() + "," + (l.hasAccuracy() ? Math.round(l.getAccuracy()) : 0) + "," + (l.hasSpeed() ? String.format(Locale.US, "%.1f", l.getSpeed()) : "0") + "," + (roam ? 1 : 0) + "\n";
+        try { FileWriter w = new FileWriter(new File(daysDir(this), dayKey(l.getTime()) + ".csv"), true); w.write(line); w.close(); } catch (Throwable t) { /* storage full */ }
+        if (tripOut != null) { try { FileWriter w = new FileWriter(tripOut, true); w.write(line); w.close(); } catch (Throwable t) { /* storage full */ } }
+        if (roam && !notifiedRoam) { notifiedRoam = true; alert(21, "رومنگ آن ہے · Roaming is ON", "موبائل ڈیٹا مہنگا ہو سکتا ہے · Mobile data may be expensive"); }
         checkData();
     }
 
@@ -115,6 +175,7 @@ public class TrackService extends Service implements LocationListener {
     @Override
     public void onDestroy() {
         try { if (lm != null) lm.removeUpdates(this); } catch (Throwable t) { /* ignore */ }
+        try { if (sm != null) sm.unregisterListener(this); } catch (Throwable t) { /* ignore */ }
         super.onDestroy();
     }
 

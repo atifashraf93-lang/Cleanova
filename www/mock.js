@@ -110,4 +110,22 @@
       placeName: function (o) { return Promise.resolve({ name: o.lat > 33 ? 'Islamabad' : 'Lahore' }); }
     };
   })();
+
+  (function () {
+    var T = window.TravelMock, on = location.search.indexOf('autooff') < 0, today = new Date(), k = function (back) { var d = new Date(today.getTime() - back * 86400000); return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0'); };
+    var t0 = new Date().setHours(8, 10, 0, 0);
+    function karachi() {
+      var a = [[24.9215, 67.0903], [24.9100, 67.0700], [24.8950, 67.0600], [24.8800, 67.0450], [24.8620, 67.0300], [24.8450, 67.0250], [24.8300, 67.0330], [24.8150, 67.0270]], r = [];
+      for (var i = 0; i < a.length - 1; i++) for (var q = 0; q < 8; q++) r.push({ t: t0 + (i * 8 + q) * 60000, lat: a[i][0] + (a[i + 1][0] - a[i][0]) * q / 8, lon: a[i][1] + (a[i + 1][1] - a[i][1]) * q / 8, m: i < 6 ? 2 : 1 });
+      r.push({ t: t0 + 70 * 60000, lat: 24.8150, lon: 67.0270, m: 1 }); return r;
+    }
+    T.autoStatus = function () { return Promise.resolve({ on: on, loc: true, bg: location.search.indexOf('nobg') < 0, activity: true, stepsToday: 5234 }); };
+    T.autoSet = function (o) { on = o.on; return Promise.resolve(); };
+    T.permRequest = function () { return T.autoStatus(); };
+    T.dayList = function () { var out = []; for (var i = 0; i < 6; i++) out.push({ date: k(i), distance: 12000 + i * 3100, walk: 1800 + i * 200, vehicle: 10200 + i * 2900, movingSec: 3600 + i * 400, points: 220, steps: 4800 + i * 900 }); return Promise.resolve({ days: out }); };
+    T.dayDetail = function (o) { return Promise.resolve({ date: o.date, distance: 15300, walk: 2100, vehicle: 13200, steps: 5234, movingSec: 4300, points: 220, route: karachi(), stops: [{ t0: t0 - 3600000 * 2, t1: t0 - 60000, lat: 24.9215, lon: 67.0903 }, { t0: t0 + 75 * 60000, t1: t0 + 6 * 3600000, lat: 24.8150, lon: 67.0270 }], journeys: [{ t0: t0, t1: t0 + 70 * 60000, fromLat: 24.9215, fromLon: 67.0903, toLat: 24.8150, toLon: 67.0270, walk: 2100, vehicle: 13200 }] }); };
+    T.dayDelete = function () { return Promise.resolve(); };
+    T.openUrl = function (o) { window.__opened = o.url; return Promise.resolve(); };
+    var pn = T.placeName; T.placeName = function (o) { return Promise.resolve({ name: o.lat > 24.9 ? 'Gulshan-e-Iqbal, Karachi' : 'Clifton, Karachi' }); };
+  })();
 })();

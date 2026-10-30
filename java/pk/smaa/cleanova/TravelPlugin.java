@@ -43,7 +43,9 @@ import java.util.Date;
 @CapacitorPlugin(
     name = "Travel",
     permissions = {
-        @Permission(strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }, alias = "location")
+        @Permission(strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }, alias = "location"),
+        @Permission(strings = { "android.permission.ACCESS_BACKGROUND_LOCATION" }, alias = "bgloc"),
+        @Permission(strings = { "android.permission.ACTIVITY_RECOGNITION" }, alias = "activity")
     }
 )
 public class TravelPlugin extends Plugin {
@@ -271,7 +273,8 @@ public class TravelPlugin extends Plugin {
     public void tripStop(PluginCall call) {
         long id = sp().getLong("active", 0);
         sp().edit().putLong("active", 0).apply();
-        try { ctx().stopService(new Intent(ctx(), TrackService.class)); } catch (Throwable t) { /* already stopped */ }
+        if (!sp().getBoolean("auto", false)) { try { ctx().stopService(new Intent(ctx(), TrackService.class)); } catch (Throwable t) { /* already stopped */ } }
+        else { try { restartSvc(); } catch (Throwable t) { /* ignore */ } }
         if (id != 0) {
             try {
                 File f = new File(TrackService.dir(ctx()), id + ".csv");
@@ -393,5 +396,181 @@ public class TravelPlugin extends Plugin {
                 call.resolve(r);
             }
         }).start();
+    }
+
+    private void restartSvc() {
+        Intent i = new Intent(ctx(), TrackService.class);
+        if (Build.VERSION.SDK_INT >= 26) ctx().startForegroundService(i); else ctx().startService(i);
+    }
+
+    /* ---------- automatic daily movement log ---------- */
+    @PluginMethod
+    public void autoStatus(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("on", sp().getBoolean("auto", false));
+        r.put("loc", getPermissionState("location") == PermissionState.GRANTED);
+        r.put("bg", Build.VERSION.SDK_INT < 29 || getPermissionState("bgloc") == PermissionState.GRANTED);
+        r.put("activity", Build.VERSION.SDK_INT < 29 || getPermissionState("activity") == PermissionState.GRANTED);
+        r.put("stepsToday", sp().getFloat("steps_" + TrackService.dayKey(System.currentTimeMillis()), 0f));
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void autoSet(PluginCall call) {
+        boolean on = call.getBoolean("on", false);
+        if (on && getPermissionState("location") != PermissionState.GRANTED) { call.reject("no location permission"); return; }
+        sp().edit().putBoolean("auto", on).apply();
+        try {
+            if (on) restartSvc();
+            else if (sp().getLong("active", 0) == 0) ctx().stopService(new Intent(ctx(), TrackService.class));
+            call.resolve();
+        } catch (Throwable t) { call.reject("cannot change: " + t); }
+    }
+
+    @PluginMethod
+    public void permRequest(PluginCall call) {
+        String which = call.getString("which", "activity");
+        if (Build.VERSION.SDK_INT < 29 || getPermissionState(which) == PermissionState.GRANTED) { autoStatus(call); return; }
+        requestPermissionForAlias(which, call, "permCb");
+    }
+
+    @PermissionCallback
+    private void permCb(PluginCall call) { autoStatus(call); }
+
+    /* ---------- daily summaries ---------- */
+    private static final float WALK_MAX = 2.3f;   /* m/s, about 8 km/h */
+
+    private JSObject daySummary(File f) {
+        String name = f.getName().replace(".csv", "");
+        List<Pt> pts = read(f, null);
+        double walk = 0, veh = 0;
+        long moving = 0;
+        float[] res = new float[1];
+        for (int i = 1; i < pts.size(); i++) {
+            Pt a = pts.get(i - 1), b = pts.get(i);
+            Location.distanceBetween(a.lat, a.lon, b.lat, b.lon, res);
+            long dt = Math.max(1, (b.t - a.t) / 1000);
+            float v = res[0] / dt;
+            if (res[0] < 12f || v > 70f) continue;
+            if (v < WALK_MAX) walk += res[0]; else veh += res[0];
+            if (dt <= 900) moving += dt;
+        }
+        JSObject o = new JSObject();
+        o.put("date", name);
+        o.put("distance", walk + veh);
+        o.put("walk", walk);
+        o.put("vehicle", veh);
+        o.put("movingSec", moving);
+        o.put("points", pts.size());
+        o.put("steps", sp().getFloat("steps_" + name, 0f));
+        if (!pts.isEmpty()) { o.put("first", pts.get(0).t); o.put("last", pts.get(pts.size() - 1).t); }
+        return o;
+    }
+
+    @PluginMethod
+    public void dayList(PluginCall call) {
+        File[] fs = TrackService.daysDir(ctx()).listFiles();
+        ArrayList<File> list = new ArrayList<File>();
+        if (fs != null) for (File f : fs) if (f.getName().endsWith(".csv")) list.add(f);
+        Collections.sort(list, new java.util.Comparator<File>() { public int compare(File a, File b) { return b.getName().compareTo(a.getName()); } });
+        int max = call.getInt("days", 60);
+        JSArray out = new JSArray();
+        for (int i = 0; i < list.size() && i < max; i++) out.put(daySummary(list.get(i)));
+        JSObject r = new JSObject();
+        r.put("days", out);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void dayDetail(final PluginCall call) {
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    String date = call.getString("date", "");
+                    File f = new File(TrackService.daysDir(ctx()), date + ".csv");
+                    List<Pt> pts = read(f, null);
+                    JSObject o = daySummary(f);
+                    float[] res = new float[1];
+                    /* stops: 10+ minutes within 80 m */
+                    ArrayList<double[]> stops = new ArrayList<double[]>();   /* t0, t1, lat, lon, firstIdx, lastIdx */
+                    int i = 0;
+                    while (i < pts.size()) {
+                        int j = i;
+                        while (j + 1 < pts.size()) { Location.distanceBetween(pts.get(i).lat, pts.get(i).lon, pts.get(j + 1).lat, pts.get(j + 1).lon, res); if (res[0] > 80f) break; j++; }
+                        if (j > i && pts.get(j).t - pts.get(i).t >= 10 * 60 * 1000L) { stops.add(new double[] { pts.get(i).t, pts.get(j).t, pts.get(i).lat, pts.get(i).lon, i, j }); i = j + 1; }
+                        else i++;
+                    }
+                    JSArray st = new JSArray();
+                    for (double[] s : stops) { JSObject x = new JSObject(); x.put("t0", (long) s[0]); x.put("t1", (long) s[1]); x.put("lat", s[2]); x.put("lon", s[3]); st.put(x); }
+                    o.put("stops", st);
+                    /* journeys between anchors (stops, plus the first and last point of the day) */
+                    ArrayList<double[]> anchors = new ArrayList<double[]>();   /* t0, t1, lat, lon, idxStart, idxEnd */
+                    if (!pts.isEmpty()) {
+                        Pt p0 = pts.get(0);
+                        if (stops.isEmpty() || stops.get(0)[0] - p0.t > 5 * 60 * 1000L) anchors.add(new double[] { p0.t, p0.t, p0.lat, p0.lon, 0, 0 });
+                        anchors.addAll(stops);
+                        Pt pz = pts.get(pts.size() - 1);
+                        double[] lastA = anchors.isEmpty() ? null : anchors.get(anchors.size() - 1);
+                        if (lastA == null || pz.t - lastA[1] > 5 * 60 * 1000L) anchors.add(new double[] { pz.t, pz.t, pz.lat, pz.lon, pts.size() - 1, pts.size() - 1 });
+                    }
+                    JSArray jr = new JSArray();
+                    for (int k = 0; k + 1 < anchors.size(); k++) {
+                        double[] a = anchors.get(k), b = anchors.get(k + 1);
+                        int from = (int) a[5], to = (int) b[4];
+                        double w = 0, v = 0;
+                        for (int q = Math.max(1, from + 1); q <= to && q < pts.size(); q++) {
+                            Pt pa = pts.get(q - 1), pb = pts.get(q);
+                            Location.distanceBetween(pa.lat, pa.lon, pb.lat, pb.lon, res);
+                            long dt = Math.max(1, (pb.t - pa.t) / 1000);
+                            float sp = res[0] / dt;
+                            if (res[0] < 12f || sp > 70f) continue;
+                            if (sp < WALK_MAX) w += res[0]; else v += res[0];
+                        }
+                        if (w + v < 150) continue;
+                        JSObject x = new JSObject();
+                        x.put("t0", (long) a[1]); x.put("t1", (long) b[0]);
+                        x.put("fromLat", a[2]); x.put("fromLon", a[3]); x.put("toLat", b[2]); x.put("toLon", b[3]);
+                        x.put("walk", w); x.put("vehicle", v);
+                        jr.put(x);
+                    }
+                    o.put("journeys", jr);
+                    /* route points with movement class (0 still, 1 walking, 2 vehicle) */
+                    int step = Math.max(1, pts.size() / 900);
+                    JSArray route = new JSArray();
+                    for (int q = 0; q < pts.size(); q += step) {
+                        Pt p = pts.get(q);
+                        int m = 0;
+                        if (q > 0) {
+                            Pt pa = pts.get(q - 1);
+                            Location.distanceBetween(pa.lat, pa.lon, p.lat, p.lon, res);
+                            long dt = Math.max(1, (p.t - pa.t) / 1000);
+                            float sp = res[0] / dt;
+                            m = res[0] < 12f || sp > 70f ? 0 : sp < WALK_MAX ? 1 : 2;
+                        }
+                        JSObject x = new JSObject();
+                        x.put("t", p.t); x.put("lat", p.lat); x.put("lon", p.lon); x.put("m", m);
+                        route.put(x);
+                    }
+                    o.put("route", route);
+                    call.resolve(o);
+                } catch (Throwable t) { call.reject("day failed: " + t); }
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void dayDelete(PluginCall call) {
+        new File(TrackService.daysDir(ctx()), call.getString("date", "x") + ".csv").delete();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void openUrl(PluginCall call) {
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(call.getString("url", "")));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx().startActivity(i);
+            call.resolve();
+        } catch (Throwable t) { call.reject("cannot open: " + t); }
     }
 }
