@@ -84,4 +84,26 @@
       dataUsage: function () { return Promise.resolve({ wifi: [1.1, 0.8, 1.4, 2.2, 0.9, 1.6, 0.7].map(function (x) { return x * 1024 * MBn; }), mobile: [90, 140, 60, 210, 120, 80, 45].map(function (x) { return x * MBn; }), apps: apps.map(function (a, i) { return { pkg: a[1], label: a[0], icon: ic(a[2]), today: a[3] * 100 * MBn, week: a[4] * 300 * MBn, mobile: 0 }; }) }); }
     };
   })();
+
+  window.TravelMock = (function () {
+    var perm = location.search.indexOf('noloc') < 0, active = 0, H = 3600000, now = Date.now();
+    function route(lat, lon, n, dl, dn) { var a = []; for (var i = 0; i < n; i++) a.push({ t: 0, lat: lat + dl * i / n + Math.sin(i / 6) * 0.002, lon: lon + dn * i / n + Math.cos(i / 9) * 0.002, sp: 12 + (i % 7) }); return a; }
+    var trips = [
+      { id: now - 2 * 86400000, name: 'Lahore trip', start: now - 2 * 86400000, end: now - 2 * 86400000 + 4.2 * H, distance: 352000, points: 480, maxSpeed: 31, done: true, lat0: 33.68, lon0: 73.04, lat1: 31.52, lon1: 74.35 },
+      { id: now - 9 * 86400000, name: '', start: now - 9 * 86400000, end: now - 9 * 86400000 + 0.6 * H, distance: 8400, points: 90, maxSpeed: 14, done: true, lat0: 33.7, lon0: 73.05, lat1: 33.72, lon1: 73.1 }
+    ];
+    return {
+      locStatus: function () { return Promise.resolve({ granted: perm }); },
+      locRequest: function () { perm = true; return Promise.resolve({ granted: true }); },
+      tripStatus: function () { return Promise.resolve(active ? { active: true, trip: { start: active, distance: 1250, points: 22 } } : { active: false }); },
+      tripStart: function () { active = Date.now(); return Promise.resolve({ id: active }); },
+      tripStop: function () { active = 0; return Promise.resolve(); },
+      tripList: function () { return Promise.resolve({ trips: JSON.parse(JSON.stringify(trips)) }); },
+      tripPoints: function (o) { var t = trips.filter(function (x) { return x.id === o.id; })[0]; return Promise.resolve({ points: route(t.lat0, t.lon0, 120, t.lat1 - t.lat0, t.lon1 - t.lon0) }); },
+      tripDelete: function (o) { trips = trips.filter(function (x) { return x.id !== o.id; }); return Promise.resolve(); },
+      tripRename: function (o) { trips.forEach(function (x) { if (x.id === o.id) x.name = o.name; }); return Promise.resolve(); },
+      tripExport: function () { return Promise.resolve({ path: '/storage/emulated/0/Cleanova/trips/trip-20261028-1000.gpx' }); },
+      placeName: function (o) { return Promise.resolve({ name: o.lat > 33 ? 'Islamabad' : 'Lahore' }); }
+    };
+  })();
 })();

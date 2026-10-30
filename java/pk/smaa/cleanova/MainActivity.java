@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(CleanovaPlugin.class);
         registerPlugin(MonitorPlugin.class);
+        registerPlugin(TravelPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
