@@ -2,7 +2,7 @@
   "name": "cleanova-app",
   "version": "1.0.0",
   "private": true,
-  "description": "Cleanova: find and remove duplicate photos and files. Developed by SMAA",
+  "description": "Cleanova Life: everyday companion. Developed by SMAA",
   "dependencies": {
     "@capacitor/android": "^6.2.0",
     "@capacitor/app": "^6.0.0",

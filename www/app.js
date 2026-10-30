@@ -12,6 +12,7 @@
   var AppPlugin = (!window.CLEANOVA_MOCK && PL.App) ? PL.App : null;
   var LN = (!window.CLEANOVA_MOCK && PL.LocalNotifications) ? PL.LocalNotifications : null;
 
+  var CL = { views: {} };
   function $(s) { return document.querySelector(s); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function store(k, v) { try { if (v === undefined) { var x = localStorage.getItem('cleanova.' + k); return x === null ? null : JSON.parse(x); } localStorage.setItem('cleanova.' + k, JSON.stringify(v)); } catch (e) { /* ignore */ } return null; }
@@ -20,6 +21,7 @@
   var PREF = {
     lang: store('lang') || 'both',            /* en | ur | both (Urdu with English caption) */
     theme: store('theme') || 'dark',
+    accent: store('accent') || 'teal',
     similar: store('similar') !== false,
     quality: store('quality') !== false,
     keep: store('keep') || 'camera',
@@ -35,11 +37,12 @@
   function tt(ur, en) { return PREF.lang === 'en' ? en : ur; }       /* plain text (no markup) */
   function applyLook() {
     var h = document.documentElement;
-    h.setAttribute('data-theme', PREF.theme);
+    var th = PREF.theme === 'auto' ? ((window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark') : PREF.theme;
+    h.setAttribute('data-theme', th); h.setAttribute('data-accent', PREF.accent);
     h.setAttribute('dir', PREF.lang === 'en' ? 'ltr' : 'rtl');
     h.setAttribute('lang', PREF.lang === 'en' ? 'en' : 'ur');
     document.body.className = PREF.lang === 'en' ? 'en' : '';
-    var m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', PREF.theme === 'light' ? '#eef3f8' : '#080e1a');
+    var m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', th === 'light' ? '#eef3f8' : '#080e1a');
   }
   function setPref(k, v) { PREF[k] = v; store(k, v); }
   var toastT = 0;
@@ -87,7 +90,7 @@
 
   /* ---------- state ---------- */
   var S = {
-    view: 'home', granted: false, free: 0, total: 0, scanned: false, groups: [], x: { large: [], wa: [], shots: [], junk: [], old: [], blurry: [] }, dirSet: {},
+    view: 'life', granted: false, free: 0, total: 0, scanned: false, groups: [], x: { large: [], wa: [], shots: [], junk: [], old: [], blurry: [] }, dirSet: {},
     sel: {}, review: null, list: null, limit: 150, trash: { items: [], bytes: 0 }, trashSel: {}, prog: null, back: [],
     f: { shots: 0, old: 30, blurry: 'all', junk: 'all', waAge: 90, waDir: 'all' }, last: store('last') || null
   };
@@ -208,17 +211,45 @@
   }
 
   /* ---------- navigation ---------- */
+  var IC = {
+    home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    route: '<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H16a3.5 3.5 0 0 0 0-7H8a3.5 3.5 0 0 1 0-7h7.5"/>',
+    heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+    sl: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+    bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+    spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
+    phone: '<rect x="5" y="2" width="14" height="20" rx="3"/><line x1="12" y1="18" x2="12.01" y2="18"/>',
+    card: '<rect x="2" y="5" width="20" height="14" rx="3"/><line x1="2" y1="10" x2="22" y2="10"/>',
+    drop: '<path d="M12 2.7l5.7 5.7a8 8 0 1 1-11.4 0z"/>',
+    bat: '<rect x="2" y="7" width="17" height="10" rx="2.5"/><line x1="22" y1="11" x2="22" y2="13"/>',
+    hdd: '<path d="M22 12H2"/><path d="M5.5 5.1L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/>',
+    pulse: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    pill: '<rect x="2.5" y="8.5" width="19" height="7" rx="3.5" transform="rotate(-35 12 12)"/><line x1="9" y1="9" x2="15" y2="15"/>',
+    flame: '<path d="M12 22c4 0 7-2.8 7-7 0-4-3-6-4-10-3 2-4 4-4.5 6-1-1-1.5-2-1.5-3-2 2-4 4-4 7 0 4.2 3 7 7 7z"/>',
+    arr: '<path d="M7 17L17 7M8 7h9v9"/>',
+    plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
+    scale: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 9a4 4 0 0 1 8 0"/><line x1="12" y1="9" x2="13.5" y2="6.5"/>',
+    food: '<path d="M4 3v7a3 3 0 0 0 3 3v8"/><path d="M7 3v7"/><path d="M10 3v7a3 3 0 0 1-3 3"/><path d="M17 3c-2 2-3 5-3 8h3v10"/>',
+    id: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="11" r="2.2"/><path d="M5.5 17c.6-2 2-3 3.5-3s2.9 1 3.5 3"/><line x1="15" y1="10" x2="19" y2="10"/><line x1="15" y1="14" x2="18" y2="14"/>',
+    check: '<polyline points="20 6 9 17 4 12"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
+    phoneCall: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>'
+  };
+  function ico(n, cls) { return '<svg class="i ' + (cls || '') + '" viewBox="0 0 24 24">' + (IC[n] || '') + '</svg>'; }
   var TABS = [
-    { id: 'home', ic: '🏠', ur: 'ہوم', en: 'Home' }, { id: 'overview', ic: '📊', ur: 'نتیجہ', en: 'Results' },
-    { id: 'monitor', ic: '📈', ur: 'مانیٹر', en: 'Monitor' }, { id: 'trash', ic: '🗑', ur: 'ٹریش', en: 'Trash' }, { id: 'settings', ic: '⚙', ur: 'ترتیبات', en: 'Settings' }
+    { id: 'life', ic: ico('home'), ur: 'ہوم', en: 'Home' }, { id: 'days', ic: ico('route'), ur: 'سفرنامہ', en: 'Travel' },
+    { id: 'health', ic: ico('heart'), ur: 'صحت', en: 'Health' }, { id: 'home', ic: ico('grid'), ur: 'ٹولز', en: 'Tools' }, { id: 'settings', ic: ico('sl'), ur: 'ترتیبات', en: 'Settings' }
   ];
-  var TAB_OF = { home: 'home', overview: 'overview', dups: 'overview', review: 'overview', list: 'overview', wa: 'overview', trash: 'trash', settings: 'settings', done: 'home', contacts: 'home', monitor: 'monitor', trips: 'home', trip: 'home', days: 'home', day: 'home' };
+  var TAB_OF = { life: 'life', home: 'home', overview: 'home', dups: 'home', review: 'home', list: 'home', wa: 'home', trash: 'home', settings: 'settings', done: 'home', contacts: 'home', monitor: 'home', trips: 'days', trip: 'days', days: 'days', day: 'days' };
   function go(view, extra) { S.back.push({ view: S.view, review: S.review, list: S.list }); S.view = view; if (extra !== undefined) { if (view === 'review') S.review = extra; else S.list = extra; } S.limit = 150; render(); }
   function goBack() {
     if (!$('#modal').hidden) { $('#modal').hidden = true; return true; }
     if (S.view === 'scanning') return true;
-    if (S.view === 'gate' || (S.view === 'home' && !S.back.length)) return false;
-    var b = S.back.pop() || { view: 'home' };
+    if (S.view === 'gate') { S.view = 'life'; S.back = []; render(); return true; }
+    if (S.view === 'life' && !S.back.length) return false;
+    var b = S.back.pop() || { view: 'life' };
     S.view = b.view; S.review = b.review; S.list = b.list; render(); return true;
   }
   try { if (AppPlugin && AppPlugin.addListener) AppPlugin.addListener('backButton', function () { if (!goBack()) AppPlugin.exitApp(); }); } catch (e) { /* back button stays default */ }
@@ -242,9 +273,7 @@
     [].forEach.call(n.querySelectorAll('[data-tab]'), function (b) {
       b.onclick = function () {
         var id = b.dataset.tab; S.back = [];
-        if (id === 'contacts') { S.ct = { st: 'init', groups: [], sel: {}, act: 'merge' }; go('contacts'); return; }
-    if (id === 'monitor') { S.mon = null; go('monitor'); return; }
-    if (id === 'trash') { loadTrash().then(function () { S.view = 'trash'; render(); }); return; }
+        if (id === 'days') S.dl = null;
         S.view = id; render();
       };
     });
@@ -258,7 +287,8 @@
   function footer() { return '<div class="foot">' + tt('سب کچھ آپ کے فون میں ہوتا ہے، کچھ اپلوڈ نہیں ہوتا۔', 'Everything stays on your phone. Nothing is uploaded.') + '<br>Developed by <b>SMAA</b></div>'; }
 
   function render() {
-    var fn = { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone, contacts: vContacts, monitor: vMonitor, trips: vTrips, trip: vTrip, days: vDays, day: vDay }[S.view] || vHome;
+    if (S.view === 'home' && !S.granted) S.view = 'gate';
+    var fn = (CL.views[S.view]) || { gate: vGate, home: vHome, scanning: vScan, overview: vOverview, dups: vDups, review: vReview, list: vList, wa: vWa, trash: vTrash, settings: vSettings, done: vDone, contacts: vContacts, monitor: vMonitor, trips: vTrips, trip: vTrip, days: vDays, day: vDay }[S.view] || vHome;
     if (S.view !== 'monitor') clearMon();
     if (S.view !== 'trips') clearTrip();
     if (S.view !== 'days') clearDays();
@@ -303,7 +333,7 @@
   }
 
   function vHome() {
-    setTop(T('کلینووا', 'Cleanova'));
+    setTop(T('ٹولز', 'Tools'));
     var used = S.total ? Math.round((S.total - S.free) / S.total * 100) : 0;
     var pot = S.scanned ? potential() : (S.last ? S.last.b : null);
     var hero = '<div class="hero">' + ring(used) + '<div><div class="k">' + (pot === null ? T('اسکین کر کے دیکھیں', 'Scan to see how much you can free') : T('آپ خالی کر سکتے ہیں', 'You can free up to')) + '</div>' + (pot === null ? '' : '<div class="big">' + fmt(pot) + '</div>') + '<div class="k" style="font-size:12.5px">' + tt(fmt(S.free) + ' خالی · کل ' + fmt(S.total), fmt(S.free) + ' free of ' + fmt(S.total)) + '</div></div></div>';
@@ -574,18 +604,19 @@
   function vSettings() {
     setTop(T('ترتیبات', 'Settings'));
     var h = '<div class="card"><div class="row"><div class="t"><b>' + tt('زبان', 'Language') + '</b></div></div>' + chipRow('lang', [['en', 'English', 'English'], ['ur', 'اردو', 'اردو'], ['both', 'اردو + English', 'اردو + English']]) +
-      '<div class="row" style="margin-top:6px"><div class="t"><b>' + tt('تھیم', 'Theme') + '</b></div></div>' + chipRow('theme', [['dark', 'ڈارک', 'Dark'], ['light', 'لائٹ', 'Light']]) + '</div>' +
+      '<div class="row" style="margin-top:6px"><div class="t"><b>' + tt('تھیم', 'Theme') + '</b></div></div>' + chipRow('theme', [['dark', 'ڈارک', 'Dark'], ['light', 'لائٹ', 'Light'], ['auto', 'خودکار', 'Auto']]) +
+      '<div class="row" style="margin-top:6px"><div class="t"><b>' + tt('رنگ', 'Accent colour') + '</b></div></div>' + chipRow('accent', [['teal', 'فیروزی', 'Teal'], ['blue', 'نیلا', 'Blue'], ['violet', 'جامنی', 'Violet'], ['rose', 'گلابی', 'Rose'], ['amber', 'نارنجی', 'Amber'], ['green', 'سبز', 'Green']]) + '</div>' +
       '<div class="card">' + swRow('similar', 'ملتی جلتی تصاویر', 'Find similar photos', ['اسکین سست مگر زیادہ نتائج', 'Slower scan, more results']) + swRow('quality', 'دھندلی تصاویر جانچیں', 'Check blurry photos', ['اسکین میں کچھ زیادہ وقت لگے گا', 'Adds some time to the scan']) + '</div>' +
       '<div class="card"><div class="row"><div class="t"><b>' + tt('ڈپلیکیٹ میں کون سی کاپی رکھیں', 'Which copy to keep') + '</b></div></div>' + chipRow('keep', [['camera', 'کیمرہ اصل', 'Camera original'], ['oldest', 'سب سے پرانی', 'Oldest'], ['newest', 'سب سے نئی', 'Newest'], ['largest', 'سب سے بڑی', 'Largest']]) + '</div>' +
       '<div class="card"><button class="cat" id="protbtn" style="padding:6px 0"><span class="t"><b>' + tt('محفوظ فولڈرز', 'Protected folders') + '</b><small class="e" style="display:block">' + tt('کبھی اسکین نہیں ہوں گے · ' + PREF.protect.length, 'Never scanned · ' + PREF.protect.length) + '</small></span><span class="pill a">' + tt('بدلیں', 'Edit') + '</span></button></div>' +
       '<div class="card">' + swRow('remind', 'ماہانہ یاد دہانی', 'Monthly reminder', ['ہر مہینے صفائی کی یاد دہانی', 'A nudge to clean once a month']) + '<div class="row"><div class="t"><b>' + tt('ٹریش خود خالی ہو', 'Trash auto-empty') + '</b></div></div>' + chipRow('trashDays', [[7, '7 دن', '7 days'], [30, '30 دن', '30 days'], [60, '60 دن', '60 days'], [90, '90 دن', '90 days']]) + '</div>' +
-      '<div class="card center"><div class="logo" style="margin:0 auto 8px;width:56px;height:56px;border-radius:17px;font-size:26px">✦</div><b style="font-size:19px;font-family:system-ui">Cleanova</b><div class="mut" style="font-family:system-ui;font-size:12.5px;line-height:1.8;margin-top:4px">Version 2.0 · ' + tt('مفت · اشتہارات نہیں', 'Free · No ads') + '<br>' + tt('سارا اسکین آپ کے فون میں ہی ہوتا ہے', 'All scanning stays on your phone') + '<br><span style="color:var(--acc);font-weight:700">Developed by SMAA</span></div></div>' +
+      '<div class="card center"><div class="logo" style="margin:0 auto 8px;width:56px;height:56px;border-radius:17px;font-size:26px">✦</div><b style="font-size:19px;font-family:system-ui">Cleanova Life</b><div class="mut" style="font-family:system-ui;font-size:12.5px;line-height:1.8;margin-top:4px">Version 2.0 · ' + tt('مفت · اشتہارات نہیں', 'Free · No ads') + '<br>' + tt('سارا اسکین آپ کے فون میں ہی ہوتا ہے', 'All scanning stays on your phone') + '<br><span style="color:var(--acc);font-weight:700">Developed by SMAA</span></div></div>' +
       '<div class="card"><div class="mut">' + tt('اب تک کل صفائی', 'Total cleaned so far') + '</div><div class="big">' + fmt(store('freed') || 0) + '</div></div>';
     $('#body').innerHTML = h;
     [].forEach.call(document.querySelectorAll('[data-pref]'), function (b) {
       b.onclick = function () {
         var k = b.dataset.pref, v = b.dataset.v; v = isNaN(+v) ? v : +v;
-        setPref(k, v); if (k === 'lang' || k === 'theme') applyLook(); if (k === 'trashDays') P.trashPurge({ days: v }).catch(function () { /* ignore */ });
+        setPref(k, v); if (k === 'lang' || k === 'theme' || k === 'accent') applyLook(); if (k === 'trashDays') P.trashPurge({ days: v }).catch(function () { /* ignore */ });
         var y = $('#body').scrollTop; render(); $('#body').scrollTop = y;
       };
     });
@@ -1065,10 +1096,12 @@
     return call.then(function (r) {
       S.granted = !!r.granted; S.free = r.free || 0; S.total = r.total || 0;
       if (S.granted && !purged) { purged = true; P.trashPurge({ days: PREF.trashDays }).catch(function () { /* ignore */ }); }
-      if (!quiet) { if (!S.granted) { S.view = 'gate'; } else if (S.view === 'gate') S.view = 'home'; render(); }
-    }).catch(function (e) { S.view = 'gate'; render(); if (window.cleanovaDiag) window.cleanovaDiag('status failed: ' + (e && (e.message || e)) + '\nCapacitor: ' + typeof window.Capacitor + ', native: ' + (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) + ', plugin: ' + typeof P); });
+      if (!quiet) { if (S.granted && S.view === 'gate') S.view = 'home'; render(); }
+    }).catch(function (e) { if (S.view === 'home') S.view = 'gate'; render(); if (window.cleanovaDiag) window.cleanovaDiag('status failed: ' + (e && (e.message || e)) + '\nCapacitor: ' + typeof window.Capacitor + ', native: ' + (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) + ', plugin: ' + typeof P); });
   }
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && (S.view === 'gate')) refreshStatus(); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && (S.view === 'gate' || !S.total)) refreshStatus(); });
+  CL.S = S; CL.PREF = PREF; CL.T = T; CL.tt = tt; CL.$ = $; CL.esc = esc; CL.store = store; CL.go = go; CL.goBack = goBack; CL.render = render; CL.setTop = setTop; CL.setBottom = setBottom; CL.footer = footer; CL.toast = toast; CL.fmt = fmt; CL.km = km; CL.dur = dur; CL.TP = TP; CL.MP = MP; CL.P = P; CL.ico = ico; CL.IC = IC; CL.LN = LN; CL.TAB_OF = TAB_OF; CL.applyLook = applyLook; CL.tclock = tclock; CL.setNav = setNav; CL.openTool = openTool;
+  if (window.CLifeInit) window.CLifeInit(CL);
   window.cleanovaTest = { S: S, PREF: PREF, render: render, prepare: prepare, go: go };
   applyLook();
   refreshStatus();
