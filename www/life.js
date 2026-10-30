@@ -37,9 +37,9 @@ window.CLifeInit = function (CL) {
   var HM = { today: null, steps: 0, bat: null };
   function hijri() { try { return new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).replace(' AH', ''); } catch (e) { return ''; } }
   function loadHome() {
-    TP.autoStatus().then(function (r) { HM.auto = r; HM.steps = r.stepsToday || 0; if (S.view === 'life') vLife(true); }).catch(function () { /* none */ });
-    TP.dayList({ days: 2 }).then(function (r) { var k = dkey(); HM.today = ((r && r.days) || []).filter(function (x) { return x.date === k; })[0] || null; if (HM.today && HM.today.steps > HM.steps) HM.steps = HM.today.steps; if (S.view === 'life') vLife(true); }).catch(function () { /* none */ });
-    MP.snapshot().then(function (s) { HM.bat = s && s.battery ? s.battery.level : null; if (S.view === 'life') vLife(true); }).catch(function () { /* none */ });
+    TP.autoStatus().then(function (r) { HM.auto = r; HM.steps = r.stepsToday || 0; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
+    TP.dayList({ days: 2 }).then(function (r) { var k = dkey(); HM.today = ((r && r.days) || []).filter(function (x) { return x.date === k; })[0] || null; if (HM.today && HM.today.steps > HM.steps) HM.steps = HM.today.steps; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
+    MP.snapshot().then(function (s) { HM.bat = s && s.battery ? s.battery.level : null; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
   }
   function waterToday() { var w = lget('water', {}); return w[dkey()] || 0; }
   function spentOn(from, to) { var s = 0; lget('exp', []).forEach(function (e) { if (e.t >= from && e.t < to) s += e.amt; }); return s; }
@@ -150,7 +150,7 @@ window.CLifeInit = function (CL) {
     var h = '<div class="stat"><div><b>' + rs(today) + '</b><small>' + tt('آج', 'Today') + '</small></div><div><b>' + rs(week) + '</b><small>' + tt('7 دن', '7 days') + '</small></div><div><b>' + rs(month) + '</b><small>' + tt('اس مہینے', 'This month') + '</small></div></div>';
     if (budget) { var p = Math.min(100, month / budget * 100); h += '<div class="card"><div class="kv"><span>' + tt('ماہانہ بجٹ', 'Monthly budget') + '</span><b>' + rs(month) + ' / ' + rs(budget) + '</b></div><div class="mbar"><i style="width:' + p + '%;background:' + (month > budget ? 'var(--red)' : 'linear-gradient(90deg,var(--acc),var(--acc2))') + '"></i></div><p class="note">' + (month > budget ? tt('بجٹ سے ' + rs(month - budget) + ' زیادہ', rs(month - budget) + ' over budget') : tt(rs(budget - month) + ' باقی', rs(budget - month) + ' left')) + '</p></div>'; }
     h += '<div class="card"><b>' + tt('نیا خرچ', 'Add expense') + '</b><input class="inp" id="ea" type="number" inputmode="decimal" placeholder="Rs"><div style="margin-top:4px"></div>' +
-      chips(Object.keys(EC).map(function (k) { return [k, EC[k][2]]; }), EF.cat, 'ec') + '<input class="inp" id="en" maxlength="60" placeholder="' + tt('تفصیل (اختیاری)', 'Note (optional)') + '" style="direction:auto"><button class="btn" id="esave">' + T('محفوظ کریں', 'Save') + '</button></div>';
+      chips(Object.keys(EC).map(function (k) { return [k, EC[k][2]]; }), EF.cat, 'ec') + '<input class="inp" id="en" maxlength="60" placeholder="' + tt('تفصیل (اختیاری)', 'Note (optional)') + '" style="direction:auto">' + (CL.micHtml ? '<div style="margin-top:8px">' + CL.micHtml('emic', tt('بول کر خرچ لکھیں: "پانچ سو کھانا"', 'Say it: "500 food"')) + '</div>' : '') + '<button class="btn" id="esave">' + T('محفوظ کریں', 'Save') + '</button></div>';
     var cats = {}; list.forEach(function (e) { if (e.t >= m0) cats[e.cat] = (cats[e.cat] || 0) + e.amt; });
     var ck = Object.keys(cats).sort(function (a, b) { return cats[b] - cats[a]; });
     if (ck.length) h += '<div class="sec">' + tt('اس مہینے کیٹیگری کے لحاظ سے', 'THIS MONTH BY CATEGORY') + '</div><div class="card">' + ck.map(function (k) { var c = EC[k] || EC.other; return '<div class="kv" style="border:0"><span><span class="dot" style="background:rgb(var(--c' + c[0] + '))"></span>' + L(c[2]) + '</span><b>' + rs(cats[k]) + '</b></div><div class="mbar" style="margin-top:0"><i style="width:' + (cats[k] / month * 100) + '%;background:rgb(var(--c' + c[0] + '))"></i></div>'; }).join('') + '</div>';
@@ -159,6 +159,7 @@ window.CLifeInit = function (CL) {
     $('#body').innerHTML = h;
     bind('ec', function (v) { EF.cat = v; var a = $('#ea').value, n = $('#en').value; vExp(); $('#ea').value = a; $('#en').value = n; });
     bind('ed', function (id) { lset('exp', lget('exp', []).filter(function (e) { return e.id !== id; })); vExp(); });
+    if (CL.micBind) CL.micBind('emic', function (t) { var r = CL.parseExpense(t); if (r.amt) $('#ea').value = r.amt; if (r.cat) EF.cat = r.cat; if (r.note) $('#en').value = r.note; var a2 = $('#ea').value, n2 = $('#en').value; vExp(); $('#ea').value = a2; $('#en').value = n2; CL.toast('سنا: ' + t, 'Heard: ' + t); });
     $('#esave').onclick = function () { var a = num($('#ea').value); if (!a || a <= 0) { CL.toast('رقم لکھیں', 'Enter an amount'); return; } var l = lget('exp', []); l.push({ id: uid(), t: Date.now(), amt: a, cat: EF.cat, note: $('#en').value.trim() }); lset('exp', l); vExp(); };
     $('#ebs').onclick = function () { lset('budget', num($('#eb').value) || 0); CL.toast('بجٹ محفوظ', 'Budget saved'); vExp(); };
   }
@@ -443,4 +444,6 @@ window.CLifeInit = function (CL) {
     };
   }
   V.backup = vBackup;
+  CL.u = { lget: lget, lset: lset, uid: uid, L: L, num: num, pad: pad, dkey: dkey, startOfDay: startOfDay, chips: chips, bind: bind, rgba: rgba, ib: ib, rs: rs, nav: nav, disc: disc, bars: bars, fdate: fdate, fday: fday, scheduleLN: scheduleLN, cancelLN: cancelLN, upcoming: upcoming, waterToday: waterToday, spentOn: spentOn, prof: prof, EC: EC, EF: EF, rgb: rgb, TO: TO, nowLocal: nowLocal, sugSt: sugSt, bpSt: bpSt, brand: brand, vLife: vLife, vExp: vExp };
+  if (window.CLifeInit2) window.CLifeInit2(CL);
 };

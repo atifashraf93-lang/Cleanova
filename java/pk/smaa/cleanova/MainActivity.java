@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(CleanovaPlugin.class);
         registerPlugin(MonitorPlugin.class);
         registerPlugin(TravelPlugin.class);
+        registerPlugin(SafetyPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

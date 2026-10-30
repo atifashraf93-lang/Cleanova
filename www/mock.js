@@ -128,4 +128,6 @@
     T.openUrl = function (o) { window.__opened = o.url; return Promise.resolve(); };
     var pn = T.placeName; T.placeName = function (o) { return Promise.resolve({ name: o.lat > 24.9 ? 'Gulshan-e-Iqbal, Karachi' : 'Clifton, Karachi' }); };
   })();
+
+  window.SafetyMock = { biometricInfo: function () { return Promise.resolve({ available: true, biometric: true }); }, biometricAuth: function () { return Promise.resolve({ ok: true }); }, secure: function () { return Promise.resolve(); }, voice: function () { return Promise.resolve({ results: [window.__voice || 'پانچ سو کھانا'] }); } };
 })();

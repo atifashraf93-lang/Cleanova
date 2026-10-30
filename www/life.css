@@ -81,3 +81,10 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .sel{width:100%;min-height:48px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:6px 10px;font:inherit;margin-top:6px}
 
 .mm svg{width:100%;height:100%;display:block}
+.mg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.mt{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 2px;border-radius:16px;background:var(--card);border:1px solid var(--line);font-size:11.5px;line-height:1.3;text-align:center}
+.mt .dd{width:38px;height:38px}
+#lock{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center;text-align:center;direction:ltr}
+.lkin{width:290px}
+.lkd{display:flex;justify-content:center;gap:12px;margin:16px 0}.lkd i{width:14px;height:14px;border-radius:50%;border:2px solid var(--mut)}.lkd i.f{background:var(--acc);border-color:var(--acc)}
+.lkp{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.lkp button{height:58px;border-radius:18px;background:var(--card);border:1px solid var(--line);font-size:22px;font-weight:600}

@@ -611,6 +611,7 @@
       '<div class="card"><button class="cat" id="protbtn" style="padding:6px 0"><span class="t"><b>' + tt('محفوظ فولڈرز', 'Protected folders') + '</b><small class="e" style="display:block">' + tt('کبھی اسکین نہیں ہوں گے · ' + PREF.protect.length, 'Never scanned · ' + PREF.protect.length) + '</small></span><span class="pill a">' + tt('بدلیں', 'Edit') + '</span></button></div>' +
       '<div class="card">' + swRow('remind', 'ماہانہ یاد دہانی', 'Monthly reminder', ['ہر مہینے صفائی کی یاد دہانی', 'A nudge to clean once a month']) + '<div class="row"><div class="t"><b>' + tt('ٹریش خود خالی ہو', 'Trash auto-empty') + '</b></div></div>' + chipRow('trashDays', [[7, '7 دن', '7 days'], [30, '30 دن', '30 days'], [60, '60 دن', '60 days'], [90, '90 دن', '90 days']]) + '</div>' +
       '<div class="card center"><div class="logo" style="margin:0 auto 8px;width:56px;height:56px;border-radius:17px;font-size:26px">✦</div><b style="font-size:19px;font-family:system-ui">Cleanova Life</b><div class="mut" style="font-family:system-ui;font-size:12.5px;line-height:1.8;margin-top:4px">Version 2.0 · ' + tt('مفت · اشتہارات نہیں', 'Free · No ads') + '<br>' + tt('سارا اسکین آپ کے فون میں ہی ہوتا ہے', 'All scanning stays on your phone') + '<br><span style="color:var(--acc);font-weight:700">Developed by SMAA</span></div></div>' +
+      '<div class="card"><button class="cat" id="prbtn" style="padding:6px 0"><span class="t"><b>' + tt('پرائیویسی، لاک اور ڈسپلے', 'Privacy, lock and display') + '</b><small class="e" style="display:block">' + tt('پن، فنگر پرنٹ، بڑے حروف', 'PIN, fingerprint, large text') + '</small></span><span>›</span></button></div>' +
       '<div class="card"><button class="cat" id="bkbtn" style="padding:6px 0"><span class="t"><b>' + tt('بیک اپ اور بحالی', 'Backup and restore') + '</b><small class="e" style="display:block">' + tt('صحت، خرچ، یاد دہانیاں محفوظ کریں', 'Save health, expenses, reminders') + '</small></span><span>›</span></button></div>' +
       '<div class="card"><div class="mut">' + tt('اب تک کل صفائی', 'Total cleaned so far') + '</div><div class="big">' + fmt(store('freed') || 0) + '</div></div>';
     $('#body').innerHTML = h;
@@ -630,6 +631,7 @@
     });
     $('#protbtn').onclick = protectSheet;
     $('#bkbtn').onclick = function () { go('backup'); };
+    $('#prbtn').onclick = function () { go('prefs'); };
   }
   function protectSheet() {
     P.dirs().then(function (r) {
@@ -671,7 +673,7 @@
     var j = pnQ.shift();
     TP.placeName({ lat: j[0], lon: j[1] }).then(function (r) { PN[j[2]] = (r && r.name) || ''; }).catch(function () { /* offline */ }).then(function () { pnBusy = false; if (S.view === 'day' && PN[j[2]]) { S.dayRedraw && S.dayRedraw(); } pnRun(); });
   }
-  function nm(lat, lon) { var n = pname(lat, lon); return n || ('\u2066' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '\u2069'); }
+  function nm(lat, lon) { var sv = CL.savedName && CL.savedName(lat, lon); if (sv) return esc(sv); var n = pname(lat, lon); return n || ('\u2066' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '\u2069'); }
   function gmaps(o) {
     var u = o.to ? 'https://www.google.com/maps/dir/?api=1&origin=' + o.from[0] + ',' + o.from[1] + '&destination=' + o.to[0] + ',' + o.to[1] : 'https://www.google.com/maps/search/?api=1&query=' + o.at[0] + ',' + o.at[1];
     TP.openUrl({ url: u }).catch(function () { window.open(u, '_blank'); });
@@ -742,7 +744,7 @@
       }).join('');
     }
     if (d.stops && d.stops.length) {
-      h += '<div class="sec">' + tt('ٹھہراؤ (10 منٹ سے زیادہ)', 'STOPS (10+ MINUTES)') + '</div><div class="card">' + d.stops.map(function (x, i) { return '<div class="kv"><span>📍 ' + nm(x.lat, x.lon) + '</span><b>' + tclock(x.t0) + ' – ' + tclock(x.t1) + ' · ' + dur(x.t1 - x.t0) + ' <button class="chip" data-gs="' + i + '" style="padding:0 8px">↗</button></b></div>'; }).join('') + '</div>';
+      h += '<div class="sec">' + tt('ٹھہراؤ (10 منٹ سے زیادہ)', 'STOPS (10+ MINUTES)') + '</div><div class="card">' + d.stops.map(function (x, i) { return '<div class="kv"><span>📍 ' + nm(x.lat, x.lon) + '</span><b>' + tclock(x.t0) + ' – ' + tclock(x.t1) + ' · ' + dur(x.t1 - x.t0) + ' <button class="chip" data-gs="' + i + '" style="padding:0 8px">↗</button> <button class="chip" data-pnm="' + i + '" style="padding:0 8px">✎</button></b></div>'; }).join('') + '</div>';
     }
     h += '<div class="card"><button class="btn" id="dyDel" style="background:var(--red);color:#fff;box-shadow:none;margin-top:0">' + T('اس دن کا ریکارڈ حذف کریں', 'Delete this day') + '</button></div>' + footer();
     $('#body').innerHTML = h;
@@ -766,6 +768,7 @@
     };
     [].forEach.call(document.querySelectorAll('[data-gm]'), function (b) { b.onclick = function () { var j = d.journeys[+b.dataset.gm]; gmaps({ from: [j.fromLat, j.fromLon], to: [j.toLat, j.toLon] }); }; });
     [].forEach.call(document.querySelectorAll('[data-gs]'), function (b) { b.onclick = function () { var x = d.stops[+b.dataset.gs]; gmaps({ at: [x.lat, x.lon] }); }; });
+    [].forEach.call(document.querySelectorAll('[data-pnm]'), function (b) { b.onclick = function () { var x = d.stops[+b.dataset.pnm]; CL.ask(tt('اس جگہ کا نام', 'Name this place'), '', function (v) { CL.savePlace(v, x.lat, x.lon); vDay(); }, tt('گھر، آفس، مسجد…', 'Home, office, mosque…')); }; });
     $('#dyDel').onclick = function () { var b = $('#dyDel'); if (!b.dataset.sure) { b.dataset.sure = '1'; b.innerHTML = T('تصدیق کے لیے دوبارہ دبائیں', 'Tap again to confirm'); return; } TP.dayDelete({ date: D.date }).then(function () { S.day = null; if (S.dl) S.dl.days = null; goBack(); }); };
   }
 
@@ -1103,6 +1106,7 @@
   }
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && (S.view === 'gate' || !S.total)) refreshStatus(); });
   CL.S = S; CL.PREF = PREF; CL.T = T; CL.tt = tt; CL.$ = $; CL.esc = esc; CL.store = store; CL.go = go; CL.goBack = goBack; CL.render = render; CL.setTop = setTop; CL.setBottom = setBottom; CL.footer = footer; CL.toast = toast; CL.fmt = fmt; CL.km = km; CL.dur = dur; CL.TP = TP; CL.MP = MP; CL.P = P; CL.ico = ico; CL.IC = IC; CL.LN = LN; CL.TAB_OF = TAB_OF; CL.applyLook = applyLook; CL.tclock = tclock; CL.setNav = setNav; CL.openTool = openTool;
+  window.CLtest = CL;
   if (window.CLifeInit) window.CLifeInit(CL);
   window.cleanovaTest = { S: S, PREF: PREF, render: render, prepare: prepare, go: go };
   applyLook();
