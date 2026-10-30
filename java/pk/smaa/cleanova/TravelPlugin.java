@@ -9,6 +9,13 @@ import android.location.Geocoder;
 import android.location.Location;
 import android.os.Build;
 import android.os.Environment;
+import android.os.BatteryManager;
+import android.app.AppOpsManager;
+import android.app.usage.NetworkStats;
+import android.app.usage.NetworkStatsManager;
+import android.database.Cursor;
+import android.net.ConnectivityManager;
+import android.provider.MediaStore;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -65,7 +72,7 @@ public class TravelPlugin extends Plugin {
     }
 
     /* ---- parsing ---- */
-    private static class Pt { long t; double lat, lon; float acc, sp; }
+    private static class Pt { long t; double lat, lon; float acc, sp; int roam; }
 
     private List<Pt> read(File f, String[] meta) {
         ArrayList<Pt> pts = new ArrayList<Pt>();
@@ -75,12 +82,14 @@ public class TravelPlugin extends Plugin {
             while ((ln = r.readLine()) != null) {
                 if (ln.startsWith("#name,")) { if (meta != null) meta[0] = ln.substring(6); continue; }
                 if (ln.startsWith("#end,")) { if (meta != null) meta[1] = ln.substring(5); continue; }
+                if (ln.startsWith("#bat0,")) { if (meta != null && meta.length > 2) meta[2] = ln.substring(6); continue; }
+                if (ln.startsWith("#bat1,")) { if (meta != null && meta.length > 3) meta[3] = ln.substring(6); continue; }
                 String[] p = ln.split(",");
                 if (p.length < 5) continue;
                 try {
                     Pt q = new Pt();
                     q.t = Long.parseLong(p[0]); q.lat = Double.parseDouble(p[1]); q.lon = Double.parseDouble(p[2]);
-                    q.acc = Float.parseFloat(p[3]); q.sp = Float.parseFloat(p[4]);
+                    q.acc = Float.parseFloat(p[3]); q.sp = Float.parseFloat(p[4]); q.roam = p.length > 5 && p[5].trim().equals("1") ? 1 : 0;
                     pts.add(q);
                 } catch (NumberFormatException x) { /* skip bad line */ }
             }
@@ -102,7 +111,7 @@ public class TravelPlugin extends Plugin {
     }
 
     private JSObject summary(File f) {
-        String[] meta = new String[] { "", "" };
+        String[] meta = new String[] { "", "", "", "" };
         List<Pt> pts = read(f, meta);
         long id = 0;
         try { id = Long.parseLong(f.getName().replace(".csv", "")); } catch (NumberFormatException x) { /* ignore */ }
@@ -119,8 +128,112 @@ public class TravelPlugin extends Plugin {
         o.put("points", pts.size());
         o.put("maxSpeed", max);
         o.put("done", meta[1].length() > 0);
+        try { if (meta[2].length() > 0) o.put("bat0", Integer.parseInt(meta[2].trim())); if (meta[3].length() > 0) o.put("bat1", Integer.parseInt(meta[3].trim())); } catch (NumberFormatException x) { /* ignore */ }
+        boolean roamed = false;
+        for (Pt p : pts) if (p.roam == 1) roamed = true;
+        o.put("roamed", roamed);
         if (!pts.isEmpty()) { o.put("lat0", pts.get(0).lat); o.put("lon0", pts.get(0).lon); Pt z = pts.get(pts.size() - 1); o.put("lat1", z.lat); o.put("lon1", z.lon); }
         return o;
+    }
+
+    private int battery() {
+        try {
+            Intent b = ctx().registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            int l = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1), sc = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+            return sc > 0 ? Math.round(l * 100f / sc) : l;
+        } catch (Throwable t) { return -1; }
+    }
+
+    private boolean hasUsage() {
+        try {
+            AppOpsManager ops = (AppOpsManager) ctx().getSystemService(Context.APP_OPS_SERVICE);
+            return ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), ctx().getPackageName()) == AppOpsManager.MODE_ALLOWED;
+        } catch (Throwable t) { return false; }
+    }
+
+    private long netBytes(int type, long s, long e) {
+        try {
+            NetworkStatsManager nsm = (NetworkStatsManager) ctx().getSystemService(Context.NETWORK_STATS_SERVICE);
+            NetworkStats.Bucket b = nsm.querySummaryForDevice(type, null, s, e);
+            return b.getRxBytes() + b.getTxBytes();
+        } catch (Throwable t) { return -1L; }
+    }
+
+    private int mediaCount(android.net.Uri uri, long s, long e) {
+        Cursor c = null;
+        try {
+            c = ctx().getContentResolver().query(uri, new String[] { MediaStore.MediaColumns._ID }, "datetaken>=? AND datetaken<=?", new String[] { String.valueOf(s), String.valueOf(e) }, null);
+            return c == null ? 0 : c.getCount();
+        } catch (Throwable t) { return 0; } finally { if (c != null) c.close(); }
+    }
+
+    /** Full details of one trip: summary, stops, data used during it, photos and videos taken during it. */
+    @PluginMethod
+    public void tripDetail(final PluginCall call) {
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    long id = call.getLong("id", 0L);
+                    File f = new File(TrackService.dir(ctx()), id + ".csv");
+                    JSObject o = summary(f);
+                    List<Pt> pts = read(f, null);
+                    JSArray stops = new JSArray();
+                    int i = 0, n = 0;
+                    float[] res = new float[1];
+                    while (i < pts.size() && n < 8) {
+                        int j = i;
+                        while (j + 1 < pts.size()) { Location.distanceBetween(pts.get(i).lat, pts.get(i).lon, pts.get(j + 1).lat, pts.get(j + 1).lon, res); if (res[0] > 80f) break; j++; }
+                        if (j > i && pts.get(j).t - pts.get(i).t >= 10 * 60 * 1000L) {
+                            JSObject sp = new JSObject();
+                            sp.put("t0", pts.get(i).t); sp.put("t1", pts.get(j).t); sp.put("lat", pts.get(i).lat); sp.put("lon", pts.get(i).lon);
+                            stops.put(sp); n++;
+                        }
+                        i = Math.max(j, i) + 1;
+                    }
+                    o.put("stops", stops);
+                    long s = o.getLong("start"), e = o.getLong("end");
+                    if (hasUsage()) {
+                        o.put("dataWifi", netBytes(ConnectivityManager.TYPE_WIFI, s, e));
+                        o.put("dataMobile", netBytes(ConnectivityManager.TYPE_MOBILE, s, e));
+                    }
+                    int photos = mediaCount(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, s, e), videos = mediaCount(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, s, e);
+                    o.put("photos", photos);
+                    o.put("videos", videos);
+                    call.resolve(o);
+                } catch (Throwable t) { call.reject("detail failed: " + t); }
+            }
+        }).start();
+    }
+
+    /** Notes and expenses are stored as one JSON text per trip. */
+    @PluginMethod
+    public void extraGet(PluginCall call) {
+        JSObject r = new JSObject();
+        String txt = "[]";
+        try {
+            File f = new File(TrackService.dir(ctx()), call.getLong("id", 0L) + ".json");
+            if (f.exists()) { BufferedReader br = new BufferedReader(new FileReader(f)); StringBuilder sb = new StringBuilder(); String ln; while ((ln = br.readLine()) != null) sb.append(ln); br.close(); txt = sb.toString(); }
+        } catch (Throwable t) { /* empty */ }
+        r.put("json", txt);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void extraSet(PluginCall call) {
+        try {
+            FileWriter w = new FileWriter(new File(TrackService.dir(ctx()), call.getLong("id", 0L) + ".json"), false);
+            w.write(call.getString("json", "[]"));
+            w.close();
+            call.resolve();
+        } catch (Throwable t) { call.reject("save failed: " + t); }
+    }
+
+    @PluginMethod
+    public void tripConfig(PluginCall call) {
+        if (call.hasOption("dataLimitMb")) sp().edit().putLong("dataLimitMb", call.getLong("dataLimitMb", 0L)).apply();
+        JSObject r = new JSObject();
+        r.put("dataLimitMb", sp().getLong("dataLimitMb", 0));
+        call.resolve(r);
     }
 
     @PluginMethod
@@ -143,7 +256,7 @@ public class TravelPlugin extends Plugin {
             String name = call.getString("name", "");
             File f = new File(TrackService.dir(ctx()), id + ".csv");
             FileWriter w = new FileWriter(f, false);
-            w.write("#name," + name.replace("\n", " ").replace(",", " ") + "\n");
+            w.write("#name," + name.replace("\n", " ").replace(",", " ") + "\n#bat0," + battery() + "\n");
             w.close();
             sp().edit().putLong("active", id).apply();
             Intent i = new Intent(ctx(), TrackService.class);
@@ -163,7 +276,7 @@ public class TravelPlugin extends Plugin {
             try {
                 File f = new File(TrackService.dir(ctx()), id + ".csv");
                 FileWriter w = new FileWriter(f, true);
-                w.write("#end," + System.currentTimeMillis() + "\n");
+                w.write("#bat1," + battery() + "\n#end," + System.currentTimeMillis() + "\n");
                 w.close();
             } catch (Throwable t) { /* ignore */ }
         }
@@ -211,6 +324,7 @@ public class TravelPlugin extends Plugin {
         long id = call.getLong("id", 0L);
         if (id == sp().getLong("active", 0)) { call.reject("trip is still recording"); return; }
         new File(TrackService.dir(ctx()), id + ".csv").delete();
+        new File(TrackService.dir(ctx()), id + ".json").delete();
         call.resolve();
     }
 

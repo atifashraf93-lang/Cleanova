@@ -64,6 +64,7 @@ body:not(.en) .big { text-align: start; }
 .sw[aria-pressed="true"]::after { inset-inline-start: 24px; background: var(--accfg); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip { font-size: 13.5px; border: 1px solid var(--line); border-radius: 18px; padding: 3px 13px; color: var(--mut); line-height: 1.6; }
+.chip { direction: ltr; unicode-bidi: plaintext; }
 .chip.on { background: var(--acc); color: var(--accfg); border-color: var(--acc); font-weight: 700; }
 .grp { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px; margin-top: 12px; }
 .grp .hd { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--mut); line-height: 1.7; }

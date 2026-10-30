@@ -642,6 +642,8 @@
       clearTrip(); Tt.loading = true;
       var load = function () {
         TP.locStatus().then(function (r) { Tt.perm = !!(r && r.granted); });
+        TP.tripConfig({}).then(function (r) { Tt.limit = r && r.dataLimitMb || 0; }).catch(function () { /* old build */ });
+        if (!Tt.snap) { MP.snapshot().then(function (r) { Tt.snap = r; }).catch(function () { /* optional */ }); MP.usageStatus().then(function (r) { Tt.ug = !!(r && r.granted); }).catch(function () { /* optional */ }); }
         TP.tripStatus().then(function (r) { Tt.status = r; });
         TP.tripList().then(function (r) { Tt.list = (r && r.trips) || []; Tt.loading = false; if (S.view === 'trips') vTrips(true); }).catch(function () { Tt.loading = false; Tt.list = []; if (S.view === 'trips') vTrips(true); });
       };
@@ -659,16 +661,28 @@
     } else {
       h += '<div class="card" style="margin-top:6px"><input id="trName" placeholder="' + tt('سفر کا نام (اختیاری)، مثلاً لاہور ٹرپ', 'Trip name (optional), e.g. Lahore trip') + '" style="width:100%;min-height:46px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:15px"><button class="btn" id="trStart">' + T('سفر شروع کریں', 'Start trip') + '</button><p class="mut" style="font-size:12px;margin-top:8px">' + tt('ریکارڈنگ کے دوران اوپر ایک نوٹیفکیشن رہتا ہے۔ بیٹری بچانے کے لیے ختم کرنا نہ بھولیں۔', 'A notification stays on while recording. Remember to end the trip to save battery.') + '</p></div>';
     }
+    if (!st.active && Tt.perm) {
+      var sn = Tt.snap, fb = sn && sn.storage ? sn.storage.free : 0, bl = sn && sn.battery ? sn.battery.level : null;
+      var ck = function (ok, txt, hint) { return '<div class="kv"><span>' + (ok === null ? '⏳' : ok ? '✅' : '⚠️') + ' ' + txt + '</span><b style="font-size:12.5px;color:var(--mut)">' + (hint || '') + '</b></div>'; };
+      h += '<div class="sec">' + tt('سفر سے پہلے کی چیک لسٹ', 'BEFORE YOU TRAVEL') + '</div><div class="card">' +
+        ck(bl === null ? null : bl >= 80, tt('بیٹری کم از کم 80%', 'Battery at least 80%'), bl === null ? '' : bl + '%') +
+        ck(fb ? fb >= 5e9 : null, tt('اسٹوریج میں 5 GB خالی', '5 GB free storage'), fb ? fmt(fb) : '') +
+        ck(Tt.perm, tt('لوکیشن کی اجازت', 'Location permission'), '') +
+        ck(Tt.ug === undefined ? null : Tt.ug, tt('ڈیٹا کی نگرانی (Usage access)', 'Data tracking (Usage access)'), Tt.ug ? '' : tt('مانیٹر ٹیب سے دیں', 'grant in Monitor')) +
+        (fb ? '<div class="sec" style="margin:12px 0 4px">' + tt('خالی جگہ میں تقریباً', 'FREE SPACE FITS ABOUT') + '</div><div class="kv"><span>📷 ' + tt('تصاویر', 'Photos') + '</span><b>' + Math.floor(fb / 4e6).toLocaleString('en') + '</b></div><div class="kv"><span>🎬 1080p ' + tt('ویڈیو', 'video') + '</span><b>' + Math.floor(fb / 130e6 / 60) + ' ' + tt('گھنٹے', 'h') + '</b></div><div class="kv"><span>🎬 4K ' + tt('ویڈیو', 'video') + '</span><b>' + Math.floor(fb / 375e6 / 60) + ' ' + tt('گھنٹے', 'h') + '</b></div>' : '') +
+        '<div class="sec" style="margin:12px 0 4px">' + tt('سفر میں موبائل ڈیٹا کی حد (الرٹ)', 'MOBILE DATA LIMIT FOR A TRIP (ALERT)') + '</div><div class="chips">' + [[0, tt('بند', 'Off')], [500, '500 MB'], [1024, '1 GB'], [2048, '2 GB'], [5120, '5 GB']].map(function (c) { return '<button class="chip' + ((Tt.limit || 0) === c[0] ? ' on' : '') + '" data-dl="' + c[0] + '">' + c[1] + '</button>'; }).join('') + '</div></div>';
+    }
     var now = new Date(), ms = new Date(now.getFullYear(), now.getMonth(), 1).getTime(), mt = 0, mc = 0;
     list.forEach(function (x) { if (x.start >= ms) { mt += x.distance; mc++; } });
     h += '<div class="card"><div class="kv"><span>' + tt('اس مہینے سفر', 'Trips this month') + '</span><b>' + mc + '</b></div><div class="kv"><span>' + tt('اس مہینے کا کل فاصلہ', 'Distance this month') + '</span><b>' + km(mt) + '</b></div></div>';
     h += '<div class="sec">' + tt('میرے سفر', 'MY TRIPS') + '</div>';
     if (!list.length) h += '<div class="card mut center">' + tt('ابھی کوئی سفر ریکارڈ نہیں۔', 'No trips recorded yet.') + '</div>';
     list.forEach(function (x) {
-      h += '<button class="cat" data-trip="' + x.id + '"><span><b>' + (x.name || tdate(x.start)) + '</b>' + (x.name ? '<small class="e" style="display:block">' + tdate(x.start) + '</small>' : '') + '</span><span style="direction:ltr;font-family:system-ui,sans-serif">' + km(x.distance) + ' · ' + dur(Math.max(0, x.end - x.start)) + '</span></button>';
+      h += '<button class="cat" data-trip="' + x.id + '"><span><b>' + (x.roamed ? '🌍 ' : '') + (x.name || tdate(x.start)) + '</b>' + (x.name ? '<small class="e" style="display:block">' + tdate(x.start) + '</small>' : '') + '</span><span style="direction:ltr;font-family:system-ui,sans-serif">' + km(x.distance) + ' · ' + dur(Math.max(0, x.end - x.start)) + '</span></button>';
     });
     h += '<p class="mut" style="font-size:12px;margin:14px 4px">' + tt('نقشے کی جگہ راستے کا خاکہ دکھایا جاتا ہے، تاکہ سب کچھ بغیر انٹرنیٹ کے بھی چلے۔ GPX فائل کسی بھی نقشے کی ایپ میں کھل سکتی ہے۔', 'A route sketch is shown instead of map tiles so everything works offline. The GPX file opens in any maps app.') + '</p>' + footer();
     root.innerHTML = h;
+    [].forEach.call(document.querySelectorAll('[data-dl]'), function (b) { b.onclick = function () { TP.tripConfig({ dataLimitMb: +b.dataset.dl }).then(function (r) { Tt.limit = r.dataLimitMb; vTrips(true); }); }; });
     var ps = $('#trPerm'); if (ps) ps.onclick = function () { TP.locRequest().then(function (r) { Tt.perm = !!(r && r.granted); if (!Tt.perm) toast('اجازت نہیں ملی', 'Permission not granted'); vTrips(true); }); };
     var sb = $('#trStart'); if (sb) sb.onclick = function () { TP.tripStart({ name: ($('#trName').value || '').trim() }).then(function () { Tt.status = { active: true, trip: { start: Date.now(), distance: 0, points: 0 } }; vTrips(true); toast('ریکارڈنگ شروع', 'Recording started'); }).catch(function (e) { toast('شروع نہیں ہو سکا', 'Could not start: ' + (e && e.message || e)); }); };
     var eb = $('#trStop'); if (eb) eb.onclick = function () { TP.tripStop().then(function () { Tt.status = { active: false }; return TP.tripList(); }).then(function (r) { Tt.list = (r && r.trips) || []; vTrips(true); toast('سفر محفوظ ہو گیا', 'Trip saved'); }); };
@@ -681,6 +695,8 @@
     if (!D.pts && !D.loading) {
       D.loading = true;
       TP.tripPoints({ id: tr.id }).then(function (r) { D.pts = (r && r.points) || []; D.loading = false; if (S.view === 'trip') vTrip(); });
+      TP.tripDetail({ id: tr.id }).then(function (r) { D.det = r; if (S.view === 'trip') vTrip(); }).catch(function () { /* old build */ });
+      TP.extraGet({ id: tr.id }).then(function (r) { try { D.extra = JSON.parse(r.json || '[]'); } catch (x) { D.extra = []; } if (S.view === 'trip') vTrip(); }).catch(function () { D.extra = []; });
       if (tr.points) { TP.placeName({ lat: tr.lat0, lon: tr.lon0 }).then(function (r) { D.from = r && r.name; if (S.view === 'trip') vTrip(); }).catch(function () { /* offline */ });
         TP.placeName({ lat: tr.lat1, lon: tr.lon1 }).then(function (r) { D.to = r && r.name; if (S.view === 'trip') vTrip(); }).catch(function () { /* offline */ }); }
     }
@@ -688,8 +704,22 @@
     var h = '<div class="card" style="margin-top:6px"><b style="font-size:17px">' + (tr.name || tdate(tr.start)) + '</b><div class="mut" style="font-size:12.5px">' + tdate(tr.start) + ' → <bdi dir="ltr">' + tclock(tr.end) + '</bdi></div>' + (D.pts ? routeSvg(D.pts) : '<div class="center" style="padding:30px"><div class="spin"></div></div>') +
       ((D.from || D.to) ? '<div class="kv" style="margin-top:8px"><span>🟢 ' + tt('سے', 'From') + '</span><b style="direction:rtl">' + (D.from || '–') + '</b></div><div class="kv"><span>🔴 ' + tt('تک', 'To') + '</span><b style="direction:rtl">' + (D.to || '–') + '</b></div>' : '') + '</div>';
     h += '<div class="card"><div class="kv"><span>' + tt('فاصلہ', 'Distance') + '</span><b>' + km(tr.distance) + '</b></div><div class="kv"><span>' + tt('دورانیہ', 'Duration') + '</span><b>' + dur(tr.end - tr.start) + '</b></div><div class="kv"><span>' + tt('اوسط رفتار', 'Average speed') + '</span><b>' + avg.toFixed(1) + ' km/h</b></div><div class="kv"><span>' + tt('زیادہ سے زیادہ رفتار', 'Top speed') + '</span><b>' + Math.round(tr.maxSpeed * 3.6) + ' km/h</b></div><div class="kv"><span>' + tt('ریکارڈ شدہ پوائنٹس', 'Recorded points') + '</span><b>' + tr.points + '</b></div></div>';
+    var dt = D.det || {}, ex = D.extra || [], spent = 0;
+    ex.forEach(function (e) { if (e.k === 'e') spent += +e.a || 0; });
+    h += '<div class="card">' +
+      (dt.bat0 != null && dt.bat1 != null ? '<div class="kv"><span>🔋 ' + tt('بیٹری', 'Battery') + '</span><b>' + dt.bat0 + '% → ' + dt.bat1 + '%</b></div>' : '') +
+      (dt.dataMobile != null ? '<div class="kv"><span>📶 ' + tt('موبائل ڈیٹا', 'Mobile data') + '</span><b>' + (dt.dataMobile >= 0 ? fmt(dt.dataMobile) : '–') + '</b></div><div class="kv"><span>📡 Wi-Fi</span><b>' + (dt.dataWifi >= 0 ? fmt(dt.dataWifi) : '–') + '</b></div>' : '<div class="mut" style="font-size:12px;padding:6px 0">' + tt('ڈیٹا کا استعمال دیکھنے کے لیے مانیٹر میں Usage access دیں۔', 'Grant Usage access in Monitor to see data use.') + '</div>') +
+      (dt.photos != null ? '<div class="kv"><span>📷 ' + tt('تصاویر / ویڈیوز', 'Photos / videos') + '</span><b>' + dt.photos + ' / ' + dt.videos + '</b></div>' : '') +
+      (tr.roamed ? '<div class="kv"><span>🌍 ' + tt('رومنگ', 'Roaming') + '</span><b>' + tt('ہاں', 'Yes') + '</b></div>' : '') + '</div>';
+    if (dt.stops && dt.stops.length) h += '<div class="card"><div class="sec" style="margin:0 0 6px">' + tt('رکنے کی جگہیں (10 منٹ سے زیادہ)', 'STOPS (10+ MINUTES)') + '</div>' + dt.stops.map(function (x) { return '<div class="kv"><span>📍 ' + tclock(x.t0) + ' – ' + tclock(x.t1) + '</span><b>' + dur(x.t1 - x.t0) + '</b></div>'; }).join('') + '</div>';
+    h += '<div class="card"><div class="sec" style="margin:0 0 6px">' + tt('نوٹس اور خرچ', 'NOTES AND EXPENSES') + '</div>' + ex.map(function (e, i) { return '<div class="kv"><span>' + (e.k === 'e' ? '💵 ' : '📝 ') + e.x + '</span><b>' + (e.k === 'e' ? (+e.a).toLocaleString('en') : '') + ' <button class="chip" data-xdel="' + i + '" style="padding:0 8px">✕</button></b></div>'; }).join('') +
+      (spent ? '<div class="kv"><span><b>' + tt('کل خرچ', 'Total spent') + '</b></span><b style="color:var(--acc)">' + spent.toLocaleString('en') + '</b></div>' : '') +
+      '<input id="xTxt" placeholder="' + tt('نوٹ یا خرچ کی تفصیل', 'Note or expense detail') + '" style="width:100%;margin-top:8px;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:15px"><input id="xAmt" type="number" inputmode="decimal" placeholder="' + tt('رقم (خرچ کے لیے)', 'Amount (for expenses)') + '" style="width:100%;margin-top:8px;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:15px"><button class="btn" id="xAdd" style="min-height:44px;font-size:15px">' + T('شامل کریں', 'Add') + '</button></div>';
     h += '<div class="card"><input id="trRen" value="' + (tr.name || '').replace(/"/g, '&quot;') + '" placeholder="' + tt('نام بدلیں', 'Rename') + '" style="width:100%;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:15px"><button class="btn" id="trSaveName" style="min-height:44px;font-size:15px;background:var(--card2);color:var(--text);box-shadow:none;border:1px solid var(--line)">' + T('نام محفوظ کریں', 'Save name') + '</button><button class="btn" id="trExp">' + T('GPX فائل بنائیں', 'Export GPX file') + '</button><button class="btn" id="trDel" style="background:var(--red);color:#fff;box-shadow:none">' + T('یہ سفر حذف کریں', 'Delete this trip') + '</button></div>' + footer();
     $('#body').innerHTML = h;
+    var save = function () { TP.extraSet({ id: tr.id, json: JSON.stringify(D.extra || []) }); vTrip(); };
+    $('#xAdd').onclick = function () { var x = $('#xTxt').value.trim(), a = $('#xAmt').value; if (!x && !a) return; D.extra = D.extra || []; D.extra.push({ k: a ? 'e' : 'n', x: x || tt('خرچ', 'Expense'), a: +a || 0, t: Date.now() }); save(); };
+    [].forEach.call(document.querySelectorAll('[data-xdel]'), function (b) { b.onclick = function () { D.extra.splice(+b.dataset.xdel, 1); save(); }; });
     $('#trSaveName').onclick = function () { TP.tripRename({ id: tr.id, name: $('#trRen').value.trim() }).then(function () { tr.name = $('#trRen').value.trim(); toast('نام محفوظ', 'Name saved'); vTrip(); }); };
     $('#trExp').onclick = function () { TP.tripExport({ id: tr.id }).then(function (r) { toast('محفوظ: ' + r.path.replace('/storage/emulated/0/', ''), 'Saved: ' + r.path.replace('/storage/emulated/0/', '')); }).catch(function (e) { toast('فائل نہیں بنی', 'Export failed: ' + (e && e.message || e)); }); };
     var db = $('#trDel'); db.onclick = function () { if (!db.dataset.sure) { db.dataset.sure = '1'; db.innerHTML = T('تصدیق کے لیے دوبارہ دبائیں', 'Tap again to confirm'); return; } TP.tripDelete({ id: tr.id }).then(function () { S.tr.list = S.tr.list.filter(function (x) { return x.id !== tr.id; }); S.trip = null; goBack(); }); };

@@ -11,7 +11,11 @@ import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.app.usage.NetworkStats;
+import android.app.usage.NetworkStatsManager;
+import android.net.ConnectivityManager;
 import android.os.Build;
+import android.telephony.TelephonyManager;
 import android.os.Bundle;
 import android.os.IBinder;
 
@@ -25,6 +29,8 @@ public class TrackService extends Service implements LocationListener {
     private LocationManager lm;
     private File out;
     private Location last;
+    private long lastCheck = 0;
+    private boolean notifiedData = false, notifiedRoam = false;
 
     static File dir(Context c) { File d = new File(c.getFilesDir(), "trips"); if (!d.exists()) d.mkdirs(); return d; }
 
@@ -68,9 +74,42 @@ public class TrackService extends Service implements LocationListener {
         last = l;
         try {
             FileWriter w = new FileWriter(out, true);
-            w.write(l.getTime() + "," + l.getLatitude() + "," + l.getLongitude() + "," + (l.hasAccuracy() ? Math.round(l.getAccuracy()) : 0) + "," + (l.hasSpeed() ? String.format(java.util.Locale.US, "%.1f", l.getSpeed()) : "0") + "\n");
+            boolean roam = false;
+            try { TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE); roam = tm != null && tm.isNetworkRoaming(); } catch (Throwable t) { /* unknown */ }
+            w.write(l.getTime() + "," + l.getLatitude() + "," + l.getLongitude() + "," + (l.hasAccuracy() ? Math.round(l.getAccuracy()) : 0) + "," + (l.hasSpeed() ? String.format(java.util.Locale.US, "%.1f", l.getSpeed()) : "0") + "," + (roam ? 1 : 0) + "\n");
+            if (roam && !notifiedRoam) { notifiedRoam = true; alert(21, "رومنگ آن ہے · Roaming is ON", "موبائل ڈیٹا مہنگا ہو سکتا ہے · Mobile data may be expensive"); }
             w.close();
         } catch (Throwable t) { /* storage full */ }
+        checkData();
+    }
+
+    private void alert(int id, String title, String text) {
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(new NotificationChannel("cl_trip_alert", "Trip alerts", NotificationManager.IMPORTANCE_HIGH));
+            Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, "cl_trip_alert") : new Notification.Builder(this);
+            b.setSmallIcon(android.R.drawable.ic_dialog_alert).setContentTitle(title).setContentText(text).setAutoCancel(true);
+            nm.notify(id, b.build());
+        } catch (Throwable t) { /* notifications blocked */ }
+    }
+
+    /** Warns once when mobile data used since the trip started passes the limit the user chose. */
+    private void checkData() {
+        long now = System.currentTimeMillis();
+        if (notifiedData || now - lastCheck < 5 * 60 * 1000L || Build.VERSION.SDK_INT < 23) return;
+        lastCheck = now;
+        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        long limit = sp.getLong("dataLimitMb", 0) * 1048576L, id = sp.getLong("active", 0);
+        if (limit <= 0 || id == 0) return;
+        try {
+            NetworkStatsManager nsm = (NetworkStatsManager) getSystemService(Context.NETWORK_STATS_SERVICE);
+            NetworkStats.Bucket b = nsm.querySummaryForDevice(ConnectivityManager.TYPE_MOBILE, null, id, now);
+            long used = b.getRxBytes() + b.getTxBytes();
+            if (used >= limit) {
+                notifiedData = true;
+                alert(22, "ڈیٹا کی حد پوری · Data limit reached", "اس سفر میں موبائل ڈیٹا " + (used / 1048576L) + " MB لگ چکا · " + (used / 1048576L) + " MB mobile data used on this trip");
+            }
+        } catch (Throwable t) { /* needs usage access */ }
     }
 
     @Override
