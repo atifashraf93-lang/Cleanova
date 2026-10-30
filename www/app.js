@@ -611,6 +611,7 @@
       '<div class="card"><button class="cat" id="protbtn" style="padding:6px 0"><span class="t"><b>' + tt('محفوظ فولڈرز', 'Protected folders') + '</b><small class="e" style="display:block">' + tt('کبھی اسکین نہیں ہوں گے · ' + PREF.protect.length, 'Never scanned · ' + PREF.protect.length) + '</small></span><span class="pill a">' + tt('بدلیں', 'Edit') + '</span></button></div>' +
       '<div class="card">' + swRow('remind', 'ماہانہ یاد دہانی', 'Monthly reminder', ['ہر مہینے صفائی کی یاد دہانی', 'A nudge to clean once a month']) + '<div class="row"><div class="t"><b>' + tt('ٹریش خود خالی ہو', 'Trash auto-empty') + '</b></div></div>' + chipRow('trashDays', [[7, '7 دن', '7 days'], [30, '30 دن', '30 days'], [60, '60 دن', '60 days'], [90, '90 دن', '90 days']]) + '</div>' +
       '<div class="card center"><div class="logo" style="margin:0 auto 8px;width:56px;height:56px;border-radius:17px;font-size:26px">✦</div><b style="font-size:19px;font-family:system-ui">Cleanova Life</b><div class="mut" style="font-family:system-ui;font-size:12.5px;line-height:1.8;margin-top:4px">Version 2.0 · ' + tt('مفت · اشتہارات نہیں', 'Free · No ads') + '<br>' + tt('سارا اسکین آپ کے فون میں ہی ہوتا ہے', 'All scanning stays on your phone') + '<br><span style="color:var(--acc);font-weight:700">Developed by SMAA</span></div></div>' +
+      '<div class="card"><button class="cat" id="bkbtn" style="padding:6px 0"><span class="t"><b>' + tt('بیک اپ اور بحالی', 'Backup and restore') + '</b><small class="e" style="display:block">' + tt('صحت، خرچ، یاد دہانیاں محفوظ کریں', 'Save health, expenses, reminders') + '</small></span><span>›</span></button></div>' +
       '<div class="card"><div class="mut">' + tt('اب تک کل صفائی', 'Total cleaned so far') + '</div><div class="big">' + fmt(store('freed') || 0) + '</div></div>';
     $('#body').innerHTML = h;
     [].forEach.call(document.querySelectorAll('[data-pref]'), function (b) {
@@ -628,6 +629,7 @@
       };
     });
     $('#protbtn').onclick = protectSheet;
+    $('#bkbtn').onclick = function () { go('backup'); };
   }
   function protectSheet() {
     P.dirs().then(function (r) {
@@ -669,7 +671,7 @@
     var j = pnQ.shift();
     TP.placeName({ lat: j[0], lon: j[1] }).then(function (r) { PN[j[2]] = (r && r.name) || ''; }).catch(function () { /* offline */ }).then(function () { pnBusy = false; if (S.view === 'day' && PN[j[2]]) { S.dayRedraw && S.dayRedraw(); } pnRun(); });
   }
-  function nm(lat, lon) { var n = pname(lat, lon); return n || (lat.toFixed(4) + ', ' + lon.toFixed(4)); }
+  function nm(lat, lon) { var n = pname(lat, lon); return n || ('\u2066' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '\u2069'); }
   function gmaps(o) {
     var u = o.to ? 'https://www.google.com/maps/dir/?api=1&origin=' + o.from[0] + ',' + o.from[1] + '&destination=' + o.to[0] + ',' + o.to[1] : 'https://www.google.com/maps/search/?api=1&query=' + o.at[0] + ',' + o.at[1];
     TP.openUrl({ url: u }).catch(function () { window.open(u, '_blank'); });
@@ -701,11 +703,11 @@
     var today = days.filter(function (x) { return x.date === todayK; })[0], wk = 0, wkW = 0, wkS = 0, mo = 0, moS = 0, nowD = new Date(), weekAgo = Date.now() - 7 * 86400000;
     days.forEach(function (x) { var d = keyDate(x.date); if (d.getTime() >= weekAgo) { wk += x.distance; wkW += x.walk; wkS += x.steps; } if (d.getMonth() === nowD.getMonth() && d.getFullYear() === nowD.getFullYear()) { mo += x.distance; moS += x.steps; } });
     var td = today || { distance: 0, walk: 0, vehicle: 0, steps: au.stepsToday || 0, movingSec: 0 };
-    h += '<div class="hero" style="display:block"><div class="k">' + T('آج', 'Today') + '</div><div class="big">' + km(td.distance) + '</div><div class="k" style="font-size:13.5px;margin-top:6px">🚶 ' + km(td.walk) + ' · 🚗 ' + km(td.vehicle) + ' · 👣 ' + Math.round(td.steps || au.stepsToday || 0).toLocaleString('en') + ' · ⏱ ' + dur(td.movingSec * 1000) + '</div>' + (today ? '<button class="btn" id="dyToday">' + T('نقشے پر آج کا راستہ', "Today's route on map") + '</button>' : '') + '</div>';
+    h += '<div class="hero" style="display:block"><div class="k">' + T('آج', 'Today') + '</div><div class="big">' + km(td.distance) + '</div><div class="k" dir="ltr" style="font-size:13.5px;margin-top:6px;text-align:start">🚶 ' + km(td.walk) + ' · 🚗 ' + km(td.vehicle) + ' · 👣 ' + Math.round(td.steps || au.stepsToday || 0).toLocaleString('en') + ' · ⏱ ' + dur(td.movingSec * 1000) + '</div>' + (today ? '<button class="btn" id="dyToday">' + T('نقشے پر آج کا راستہ', "Today's route on map") + '</button>' : '') + '</div>';
     h += '<div class="card"><div class="kv"><span>' + tt('پچھلے 7 دن کل', 'Last 7 days') + '</span><b>' + km(wk) + '</b></div><div class="kv"><span>🚶 ' + tt('پیدل (7 دن)', 'On foot (7 days)') + '</span><b>' + km(wkW) + ' · ' + Math.round(wkS).toLocaleString('en') + ' 👣</b></div><div class="kv"><span>' + tt('اس مہینے کل', 'This month') + '</span><b>' + km(mo) + ' · ' + Math.round(moS).toLocaleString('en') + ' 👣</b></div></div>';
     h += '<div class="sec">' + tt('دن بہ دن', 'DAY BY DAY') + '</div>';
     if (!days.length) h += '<div class="card mut center">' + tt('ابھی کوئی ریکارڈ نہیں۔ ریکارڈ شروع کریں اور چند منٹ چلیں پھریں۔', 'No records yet. Start recording and move around for a few minutes.') + '</div>';
-    days.forEach(function (x) { h += '<button class="cat" data-day="' + x.date + '"><span><b>' + dayLabel(x.date) + '</b><small class="e" style="display:block">🚶 ' + km(x.walk) + ' · 🚗 ' + km(x.vehicle) + ' · 👣 ' + Math.round(x.steps).toLocaleString('en') + '</small></span><span style="direction:ltr;font-family:system-ui,sans-serif">' + km(x.distance) + '</span></button>'; });
+    days.forEach(function (x) { h += '<button class="cat" data-day="' + x.date + '"><span><b>' + dayLabel(x.date) + '</b><small class="e" dir="ltr" style="display:block;text-align:start">🚶 ' + km(x.walk) + ' · 🚗 ' + km(x.vehicle) + ' · 👣 ' + Math.round(x.steps).toLocaleString('en') + '</small></span><span style="direction:ltr;font-family:system-ui,sans-serif">' + km(x.distance) + '</span></button>'; });
     h += '<button class="cat" id="dyTrips" style="margin-top:14px"><span>📍 <b>' + tt('ٹرپس (ہاتھ سے شروع/ختم)', 'Trips (start/end by hand)') + '</b></span><span>›</span></button>';
     h += '<p class="mut" style="font-size:12px;margin:14px 4px">' + tt('پیدل اور گاڑی کا فرق رفتار سے لگایا جاتا ہے (تقریباً 8 km/h سے کم = پیدل)، اس لیے سائیکل یا تیز دوڑ میں کچھ فرق آ سکتا ہے۔ قدم فون کے قدم شمار کرنے والے سینسر سے آتے ہیں۔', 'Walking vs vehicle is judged by speed (under about 8 km/h = on foot), so cycling or fast running can be misjudged. Steps come from the phone step sensor.') + '</p>' + footer();
     root.innerHTML = h;

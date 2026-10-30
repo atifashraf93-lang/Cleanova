@@ -417,4 +417,30 @@ window.CLifeInit = function (CL) {
     if ($('#ecall')) $('#ecall').onclick = function () { var u = 'tel:' + e.phone.replace(/[^0-9+]/g, ''); TP.openUrl({ url: u }).catch(function () { window.open(u, '_blank'); }); };
   }
   V.emerg = vEmerg;
+
+  /* ================= BACKUP ================= */
+  TO.backup = 'settings';
+  function vBackup() {
+    CL.setTop(T('بیک اپ', 'Backup'));
+    var h = '<div class="card" style="margin-top:8px"><b>' + tt('بیک اپ کاپی کریں', 'Copy a backup') + '</b><p class="note">' + tt('صحت، خرچ، یاد دہانیوں اور پروفائل کا ڈیٹا ایک متن میں کاپی ہو جاتا ہے۔ اسے اپنے نوٹس یا واٹس ایپ "Saved messages" میں پیسٹ کر کے رکھ لیں۔', 'Your health, expense, reminder and profile data is copied as one block of text. Paste it into your notes or WhatsApp "message yourself" to keep it safe.') + '</p><button class="btn" id="bkc">' + T('بیک اپ کاپی کریں', 'Copy backup') + '</button></div>' +
+      '<div class="card"><b>' + tt('بیک اپ سے بحال کریں', 'Restore from backup') + '</b><textarea class="inp" id="bkt" rows="5" placeholder="' + tt('یہاں بیک اپ پیسٹ کریں', 'Paste your backup here') + '" style="min-height:110px;font-size:13px"></textarea><p class="note">' + tt('بحال کرنے سے اس فون کا موجودہ صحت اور خرچ کا ڈیٹا بدل جائے گا۔', 'Restoring replaces the health and expense data currently on this phone.') + '</p><button class="btn o" id="bkr">' + T('بحال کریں', 'Restore') + '</button></div>' + CL.footer();
+    $('#body').innerHTML = h;
+    $('#bkc').onclick = function () {
+      var o = {}; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k.indexOf('cleanova.life.') === 0) o[k] = localStorage.getItem(k); }
+      var txt = 'CLEANOVA-LIFE-BACKUP\n' + JSON.stringify(o);
+      var done = function () { CL.toast('بیک اپ کاپی ہو گیا', 'Backup copied'); };
+      try { navigator.clipboard.writeText(txt).then(done, function () { fallback(txt); }); } catch (e) { fallback(txt); }
+      function fallback(t) { var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) { CL.toast('کاپی نہیں ہو سکا', 'Could not copy'); } ta.remove(); }
+    };
+    $('#bkr').onclick = function () {
+      var t = $('#bkt').value.trim(), i = t.indexOf('\n');
+      try {
+        if (t.indexOf('CLEANOVA-LIFE-BACKUP') !== 0) throw new Error('x');
+        var o = JSON.parse(t.slice(i + 1)), n = 0;
+        Object.keys(o).forEach(function (k) { if (k.indexOf('cleanova.life.') === 0 && typeof o[k] === 'string') { JSON.parse(o[k]); localStorage.setItem(k, o[k]); n++; } });
+        CL.toast('بحال ہو گیا (' + n + ')', 'Restored (' + n + ' items)');
+      } catch (e) { CL.toast('بیک اپ درست نہیں', 'That is not a valid backup'); }
+    };
+  }
+  V.backup = vBackup;
 };
