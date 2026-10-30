@@ -218,27 +218,55 @@ window.CLifeInit2 = function (CL) {
   V.weather = vWeather;
 
   /* ================= RATES ================= */
-  var CUR = ['USD', 'SAR', 'AED', 'GBP', 'EUR', 'CAD', 'AUD', 'CNY'], RF2 = { amt: '100', from: 'USD' };
+  var CUR = ['USD', 'SAR', 'AED', 'GBP', 'EUR', 'CAD', 'AUD', 'CNY'], RF2 = { amt: '100', from: 'USD', tab: 'pk', a: '1000', f: 'EUR', t: 'USD' };
+  var PAIRS = [['EUR', 'USD', '🇪🇺'], ['GBP', 'USD', '🇬🇧'], ['USD', 'JPY', '🇯🇵'], ['USD', 'CHF', '🇨🇭'], ['AUD', 'USD', '🇦🇺'], ['USD', 'CAD', '🇨🇦'], ['USD', 'CNY', '🇨🇳'], ['USD', 'SAR', '🇸🇦'], ['USD', 'AED', '🇦🇪'], ['EUR', 'GBP', '🇪🇺'], ['USD', 'INR', '🇮🇳'], ['USD', 'TRY', '🇹🇷']];
+  var DEFP = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD', 'USD/CNY', 'USD/SAR', 'USD/AED'];
+  var ALLC = ['PKR', 'USD', 'EUR', 'GBP', 'SAR', 'AED', 'JPY', 'CHF', 'AUD', 'CAD', 'CNY', 'INR', 'TRY', 'KWD', 'QAR', 'OMR', 'BHD', 'MYR', 'SGD', 'THB', 'KRW', 'NZD', 'SEK', 'NOK', 'EGP', 'BDT'];
   function loadRates() {
-    return Promise.all([getJson('https://open.er-api.com/v6/latest/USD'), getJson('https://api.gold-api.com/price/XAU').catch(function () { return null; }), getJson('https://api.gold-api.com/price/XAG').catch(function () { return null; })]).then(function (a) {
+    return Promise.all([getJson('https://open.er-api.com/v6/latest/USD'), getJson('https://api.gold-api.com/price/XAU').catch(function () { return null; }), getJson('https://api.gold-api.com/price/XAG').catch(function () { return null; }), getJson('https://api.gold-api.com/price/XPT').catch(function () { return null; })]).then(function (a) {
       if (!a[0] || !a[0].rates) throw new Error('no rates');
-      var o = { t: Date.now(), r: a[0].rates, au: a[1] && a[1].price, ag: a[2] && a[2].price }; lset('rcache', o); return o;
+      var o = { t: Date.now(), r: a[0].rates, au: a[1] && a[1].price, ag: a[2] && a[2].price, ap: a[3] && a[3].price }; lset('rcache', o);
+      var hist = lget('rhist', {}), k = dkey(); hist[k] = { au: o.au, ag: o.ag, ap: o.ap, r: o.r };
+      Object.keys(hist).sort().slice(0, -12).forEach(function (x) { delete hist[x]; }); lset('rhist', hist); return o;
     });
   }
   var TOLA = 11.6638, OZ = 31.1035;
+  function prevSnap() { var h = lget('rhist', {}), k = dkey(), ks = Object.keys(h).filter(function (x) { return x < k; }).sort(); return ks.length ? h[ks[ks.length - 1]] : null; }
+  function chg(cur, prev) { if (!cur || !prev) return ''; var p = (cur - prev) / prev * 100; return '<span class="' + (p >= 0 ? 'up' : 'dn') + '" style="font-size:12px;font-weight:600;color:' + (p >= 0 ? '#4ade80' : '#fb7185') + '">' + (p >= 0 ? '▲ ' : '▼ ') + Math.abs(p).toFixed(2) + '%</span>'; }
+  function fx(r, b, q) { return r[q] / r[b]; }
   function vRates() {
     CL.setTop(T('ریٹس', 'Rates'));
-    var c = lget('rcache', null), h = '';
-    if (c) {
+    var c = lget('rcache', null), h = chips([['pk', ['🇵🇰 پاکستان', 'Pakistan (PKR)']], ['intl', ['🌍 بین الاقوامی', 'International']]], RF2.tab, 'rtab').replace('class="chips"', 'class="chips" style="margin-top:8px"');
+    if (c && RF2.tab === 'pk') {
       var pk = c.r.PKR, cv = function (code) { return pk / c.r[code]; };
       var gold = c.au ? c.au / OZ * pk : 0, silver = c.ag ? c.ag / OZ * pk : 0;
-      h += '<div class="lhero" style="margin-top:8px"><div class="mut">' + tt('اپ ڈیٹ: ', 'Updated: ') + ago(c.t) + '</div><b style="font-size:17px">' + tt('روپے کے مقابلے میں', 'Against the rupee') + '</b>' + CUR.map(function (x) { return '<div class="kv"><span>1 ' + x + '</span><b>Rs ' + cv(x).toFixed(2) + '</b></div>'; }).join('') + '</div>';
-      if (gold) h += '<div class="card"><b>' + tt('سونا (عالمی ریٹ کے مطابق اندازہ)', 'Gold (estimate from world price)') + '</b><div class="kv"><span>' + tt('24 قیراط، فی تولہ', '24K per tola') + '</span><b>' + rs(gold * TOLA) + '</b></div><div class="kv"><span>' + tt('22 قیراط، فی تولہ', '22K per tola') + '</span><b>' + rs(gold * TOLA * 22 / 24) + '</b></div><div class="kv"><span>' + tt('24 قیراط، فی گرام', '24K per gram') + '</b></span><b>' + rs(gold) + '</b></div>' + (silver ? '<div class="kv"><span>' + tt('چاندی، فی تولہ', 'Silver per tola') + '</span><b>' + rs(silver * TOLA) + '</b></div>' : '') + '<p class="note">' + tt('یہ عالمی قیمت اور ڈالر ریٹ سے نکالا گیا اندازہ ہے۔ مقامی صرافہ کا ریٹ، پریمیم اور ٹیکس کی وجہ سے مختلف ہوتا ہے۔', 'Calculated from the world price and dollar rate. Local sarafa rates differ because of premium and taxes.') + '</p></div>';
-      h += '<div class="card"><b>' + tt('کنورٹر', 'Converter') + '</b><div class="two"><input class="inp" id="ra" type="number" inputmode="decimal" value="' + RF2.amt + '"><select class="sel" id="rf">' + CUR.concat(['PKR']).map(function (x) { return '<option' + (x === RF2.from ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div><div class="big2" id="ro" style="margin-top:10px"></div></div>';
+      h += '<div class="lhero"><div class="mut">' + tt('اپ ڈیٹ: ', 'Updated: ') + ago(c.t) + '</div><b style="font-size:17px">' + tt('روپے کے مقابلے میں', 'Against the rupee') + '</b>' + CUR.map(function (x) { return '<div class="kv"><span>1 ' + x + '</span><b>Rs ' + cv(x).toFixed(2) + '</b></div>'; }).join('') + '</div>';
+      if (gold) h += '<div class="card"><b>' + tt('سونا (عالمی ریٹ کے مطابق اندازہ)', 'Gold (estimate from world price)') + '</b><div class="kv"><span>' + tt('24 قیراط، فی تولہ', '24K per tola') + '</span><b>' + rs(gold * TOLA) + '</b></div><div class="kv"><span>' + tt('22 قیراط، فی تولہ', '22K per tola') + '</span><b>' + rs(gold * TOLA * 22 / 24) + '</b></div><div class="kv"><span>' + tt('24 قیراط، فی گرام', '24K per gram') + '</span><b>' + rs(gold) + '</b></div>' + (silver ? '<div class="kv"><span>' + tt('چاندی، فی تولہ', 'Silver per tola') + '</span><b>' + rs(silver * TOLA) + '</b></div>' : '') + '<p class="note">' + tt('یہ عالمی قیمت اور ڈالر ریٹ سے نکالا گیا اندازہ ہے۔ مقامی صرافہ کا ریٹ، پریمیم اور ٹیکس کی وجہ سے مختلف ہوتا ہے۔', 'Calculated from the world price and dollar rate. Local sarafa rates differ because of premium and taxes.') + '</p></div>';
+    } else if (c) {
+      var pv = prevSnap(), hist = lget('rhist', {}), pts = Object.keys(hist).sort().map(function (k) { return hist[k].au; }).filter(Boolean), sel = lget('pairs', DEFP);
+      if (c.au) {
+        h += '<div class="lhero" style="background:linear-gradient(150deg,rgba(251,191,36,.22),rgba(251,191,36,.04));border-color:rgba(251,191,36,.35)"><div style="display:flex;justify-content:space-between"><b style="color:#fcd34d;font-size:13px">' + tt('سونا · XAU/USD', 'GOLD · XAU/USD') + '</b>' + chg(c.au, pv && pv.au) + '</div><div class="big2" style="color:#fcd34d">$' + c.au.toLocaleString('en', { maximumFractionDigits: 2 }) + ' <small style="font-size:13px;color:var(--mut)">/ oz</small></div>';
+        if (pts.length > 1) { var mn = Math.min.apply(null, pts), mx = Math.max.apply(null, pts), sp = mx - mn || 1; h += '<svg viewBox="0 0 330 56" width="100%" height="56" style="margin-top:6px"><polyline fill="none" stroke="#fbbf24" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" points="' + pts.map(function (v, i) { return (i / (pts.length - 1) * 326 + 2).toFixed(1) + ',' + (50 - (v - mn) / sp * 44).toFixed(1); }).join(' ') + '"/></svg>'; }
+        h += '<div class="two" style="margin-top:12px">' + [[tt('چاندی · XAG/USD', 'Silver · XAG/USD'), c.ag, pv && pv.ag], [tt('پلاٹینم · XPT/USD', 'Platinum · XPT/USD'), c.ap, pv && pv.ap], [tt('سونا فی گرام', 'Gold per gram'), c.au / OZ, pv && pv.au && pv.au / OZ], [tt('سونا/چاندی تناسب', 'Gold / silver ratio'), 0, 0]].map(function (x, i) { return '<div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px"><small class="mut" style="font-size:11px">' + x[0] + '</small><div style="font-family:system-ui;font-weight:800;font-size:18px;direction:ltr;text-align:start">' + (i === 3 ? (c.ag ? (c.au / c.ag).toFixed(1) : '–') : (x[1] ? '$' + x[1].toLocaleString('en', { maximumFractionDigits: 2 }) : '–')) + '</div>' + (i < 3 ? chg(x[1], x[2]) : '') + '</div>'; }).join('') + '</div></div>';
+      }
+      h += '<div class="sh"><h2>' + tt('فاریکس جوڑے', 'Forex pairs') + '</h2><button class="sbtn" id="pedit" style="min-height:32px;padding:0 12px">' + tt('فہرست بدلیں', 'Edit list') + '</button></div><div class="card">' + PAIRS.filter(function (p) { return sel.indexOf(p[0] + '/' + p[1]) >= 0; }).map(function (p) {
+        var v = fx(c.r, p[0], p[1]), pvv = pv && pv.r ? fx(pv.r, p[0], p[1]) : 0;
+        return '<div class="ent"><span class="dd" style="background:var(--bg);font-size:20px">' + p[2] + '</span><div class="m"><b>' + p[0] + ' / ' + p[1] + '</b></div><div style="text-align:end"><span class="v" style="display:block">' + v.toFixed(v > 20 ? 2 : 4) + '</span>' + chg(v, pvv) + '</div></div>';
+      }).join('') + '</div>';
+      h += '<div class="card"><b>' + tt('کوئی بھی جوڑا کنورٹ کریں', 'Any pair converter') + '</b><div class="two"><input class="inp" id="xa" type="number" inputmode="decimal" value="' + RF2.a + '"><select class="sel" id="xf">' + ALLC.filter(function (x) { return c.r[x]; }).map(function (x) { return '<option' + (x === RF2.f ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div><div class="two" style="margin-top:6px"><div class="big2" id="xo" style="padding-top:8px;font-size:24px;color:var(--acc)"></div><select class="sel" id="xt">' + ALLC.filter(function (x) { return c.r[x]; }).map(function (x) { return '<option' + (x === RF2.t ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div></div>';
     } else h += '<div class="card center"><div class="spin"></div></div>';
-    $('#body').innerHTML = h + '<p class="note">' + tt('ڈیٹا open.er-api.com اور gold-api.com سے، انٹرنیٹ درکار۔', 'Data from open.er-api.com and gold-api.com, internet needed.') + '</p>' + CL.footer();
-    function conv() { if (!c) return; var a = num($('#ra').value) || 0, f = $('#rf').value; RF2.amt = $('#ra').value; RF2.from = f; var inPkr = f === 'PKR' ? a : a * c.r.PKR / c.r[f]; $('#ro').innerHTML = f === 'PKR' ? CUR.slice(0, 4).map(function (x) { return '<div style="font-size:16px">' + (inPkr * c.r[x] / c.r.PKR).toFixed(2) + ' ' + x + '</div>'; }).join('') : 'Rs ' + inPkr.toLocaleString('en', { maximumFractionDigits: 0 }); }
-    if (c) { $('#ra').oninput = conv; $('#rf').onchange = conv; conv(); }
+    if (c && RF2.tab === 'pk') h += '<div class="card"><b>' + tt('کنورٹر', 'Converter') + '</b><div class="two"><input class="inp" id="ra" type="number" inputmode="decimal" value="' + RF2.amt + '"><select class="sel" id="rf">' + CUR.concat(['PKR']).map(function (x) { return '<option' + (x === RF2.from ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div><div class="big2" id="ro" style="margin-top:10px"></div></div>';
+    $('#body').innerHTML = h + '<p class="note">' + tt('ڈیٹا open.er-api.com اور gold-api.com سے، انٹرنیٹ درکار۔ عالمی اسپاٹ قیمتیں ہیں، مقامی صرافہ ریٹ نہیں۔ فرق کا نشان پچھلے دن کی محفوظ قیمت سے نکلتا ہے، اس لیے دوسرے دن سے نظر آئے گا۔', 'Data from open.er-api.com and gold-api.com, internet needed. World spot prices, not local sarafa rates. Changes compare with the last day saved on your phone, so they appear from the second day.') + '</p>' + CL.footer();
+    bind('rtab', function (v) { RF2.tab = v; vRates(); });
+    function conv() { if (!c || !$('#ra')) return; var a = num($('#ra').value) || 0, f = $('#rf').value; RF2.amt = $('#ra').value; RF2.from = f; var inPkr = f === 'PKR' ? a : a * c.r.PKR / c.r[f]; $('#ro').innerHTML = f === 'PKR' ? CUR.slice(0, 4).map(function (x) { return '<div style="font-size:16px">' + (inPkr * c.r[x] / c.r.PKR).toFixed(2) + ' ' + x + '</div>'; }).join('') : 'Rs ' + inPkr.toLocaleString('en', { maximumFractionDigits: 0 }); }
+    if (c && $('#ra')) { $('#ra').oninput = conv; $('#rf').onchange = conv; conv(); }
+    function xconv() { var a = num($('#xa').value) || 0; RF2.a = $('#xa').value; RF2.f = $('#xf').value; RF2.t = $('#xt').value; $('#xo').textContent = (a * c.r[RF2.t] / c.r[RF2.f]).toLocaleString('en', { maximumFractionDigits: 4 }); }
+    if (c && $('#xa')) { $('#xa').oninput = xconv; $('#xf').onchange = xconv; $('#xt').onchange = xconv; xconv(); }
+    if ($('#pedit')) $('#pedit').onclick = function () {
+      var m = $("#modal"), sel2 = lget("pairs", DEFP).slice(); m.hidden = false;
+      function dr() { $('#sheet').innerHTML = '<b style="font-size:17px">' + tt('کون سے جوڑے دکھائیں', 'Pairs to show') + '</b><div class="chips">' + PAIRS.map(function (p) { var k = p[0] + '/' + p[1]; return '<button class="chip' + (sel2.indexOf(k) >= 0 ? ' on' : '') + '" data-pp="' + k + '">' + p[2] + ' ' + k + '</button>'; }).join('') + '</div><button class="btn" id="pdn">' + T('ٹھیک ہے', 'Done') + '</button>'; bind('pp', function (k) { var i = sel2.indexOf(k); if (i >= 0) sel2.splice(i, 1); else sel2.push(k); dr(); }); $('#pdn').onclick = function () { lset('pairs', sel2); m.hidden = true; vRates(); }; }
+      dr();
+    };
     if (!c || Date.now() - c.t > 1800000) loadRates().then(function () { if (S.view === 'rates') vRates(); }).catch(function () { if (S.view === 'rates' && !c) $('#body').insertAdjacentHTML('afterbegin', '<div class="warn">' + tt('انٹرنیٹ نہیں ہے، ریٹس نہیں آ سکے۔', 'No internet; could not load rates.') + '</div>'); });
   }
   V.rates = vRates;

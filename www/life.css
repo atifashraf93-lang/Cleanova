@@ -88,3 +88,4 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .lkin{width:290px}
 .lkd{display:flex;justify-content:center;gap:12px;margin:16px 0}.lkd i{width:14px;height:14px;border-radius:50%;border:2px solid var(--mut)}.lkd i.f{background:var(--acc);border-color:var(--acc)}
 .lkp{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.lkp button{height:58px;border-radius:18px;background:var(--card);border:1px solid var(--line);font-size:22px;font-weight:600}
+.sh{display:flex;justify-content:space-between;align-items:center;margin:20px 2px 8px}.sh h2{font-size:16px}
