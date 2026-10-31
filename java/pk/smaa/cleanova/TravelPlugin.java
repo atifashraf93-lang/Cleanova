@@ -471,8 +471,16 @@ public class TravelPlugin extends Plugin {
             long dt = Math.max(1, (b.t - a.t) / 1000);
             float v = res[0] / dt;
             if (res[0] < 12f || v > 70f) continue;
+            /* indoors the fix wanders by tens of metres: a jump smaller than the combined accuracy, or one the GPS itself reports as standing still, is noise */
+            if (res[0] < 0.5f * (a.acc + b.acc)) continue;
+            if (a.sp < 0.6f && b.sp < 0.6f && res[0] < 150f) continue;
             if (v < WALK_MAX) walk += res[0]; else veh += res[0];
             if (dt <= 900) moving += dt;
+        }
+        /* walking cannot be longer than the steps counted (about 1.1 m a step at most); only when the step sensor has data for the day */
+        if (sp().contains("steps_" + name)) {
+            double cap = sp().getFloat("steps_" + name, 0f) * 1.1 + 25;
+            if (walk > cap) walk = cap;
         }
         JSObject o = new JSObject();
         o.put("date", name);
