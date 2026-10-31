@@ -481,8 +481,9 @@ window.CLifeInit2 = function (CL) {
 
   /* ================= MORE HUB + HOME ================= */
   var MORE = [['weather', 'sun', 3, ['موسم', 'Weather']], ['rates', 'dollar', 4, ['ریٹس', 'Rates']], ['calc', 'calc', 1, ['کیلکولیٹر', 'Calculators']], ['email', 'mail', 5, ['ای میل', 'Email']], ['habits', 'check', 6, ['عادتیں', 'Habits']], ['journal', 'book', 2, ['ڈائری', 'Journal']], ['week', 'chart', 3, ['رپورٹ', 'Reports']], ['food', 'food', 4, ['کھانا', 'Food log']], ['focus', 'timer', 5, ['فوکس', 'Focus']], ['ledger', 'users', 6, ['ادھار', 'Ledger']], ['sos', 'alert', 2, ['SOS', 'SOS']], ['prefs', 'shield', 1, ['پرائیویسی', 'Privacy']]];
+  CL.MORE = MORE;
   function moreGrid() {
-    return '<div class="sec">' + tt('مزید', 'MORE') + '</div><div class="mg">' + MORE.map(function (m) { return '<button class="mt" data-mv="' + m[0] + '"><span class="dd" style="background:' + rgba(m[2], .18) + ';color:rgb(var(--c' + m[2] + '))">' + ico(m[1]) + '</span><span>' + L(m[3]) + '</span></button>'; }).join('') + '</div>';
+    return '<div class="sec">' + tt('مزید', 'MORE') + '</div><div class="mg">' + MORE.map(function (m) { return '<button class="mt" data-mv="' + m[0] + '"><span class="dd" style="background:' + rgba(m[2], .18) + ';color:rgb(var(--c' + m[2] + '))">' + (m[1].length < 4 ? '<span style="font-size:19px;line-height:1">' + m[1] + '</span>' : ico(m[1])) + '</span><span>' + L(m[3]) + '</span></button>'; }).join('') + '</div>';
   }
   var baseLife = V.life;
   V.life = function (soft) {
@@ -512,4 +513,5 @@ window.CLifeInit2 = function (CL) {
   }, 4000);
   if (window.CLifeInit3) window.CLifeInit3(CL);
   if (window.CLifeInit4) window.CLifeInit4(CL);
+  if (window.CLifeInit5) window.CLifeInit5(CL);
 };
