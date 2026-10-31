@@ -178,4 +178,12 @@ public class WebPlugin extends Plugin {
             call.resolve();
         } catch (Throwable t) { call.reject("cannot open: " + t); }
     }
+
+    @PluginMethod
+    public void clearAll(final PluginCall call) {
+        getActivity().runOnUiThread(new Runnable() { public void run() {
+            try { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); android.webkit.WebStorage.getInstance().deleteAllData(); } catch (Throwable t) { }
+            call.resolve();
+        }});
+    }
 }

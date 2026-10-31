@@ -90,6 +90,7 @@ window.CLifeInit3 = function (CL) {
       W.open({ url: url, title: title || '', rtl: CL.PREF.lang !== 'en' }).catch(function () { CL.webOpen = false; if (CL.openUrl) CL.openUrl(url); });
     } else if (CL.openUrl) CL.openUrl(url); else window.open(url, '_blank');
   }
+  CL.webOpen2 = open;
 
   /* ---------- home cards ---------- */
   var rot = null;
