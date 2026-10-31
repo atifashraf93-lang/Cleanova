@@ -254,7 +254,14 @@
     var b = S.back.pop() || { view: 'life' };
     S.view = b.view; S.review = b.review; S.list = b.list; render(); return true;
   }
-  try { if (AppPlugin && AppPlugin.addListener) AppPlugin.addListener('backButton', function () { if (!goBack()) AppPlugin.exitApp(); }); } catch (e) { /* back button stays default */ }
+  var lastBack = 0, WEB = (Cap && Cap.Plugins && Cap.Plugins.Web) ? Cap.Plugins.Web : null;
+  CL.webOpen = false;
+  if (WEB && WEB.addListener) WEB.addListener('closed', function () { CL.webOpen = false; });
+  try { if (AppPlugin && AppPlugin.addListener) AppPlugin.addListener('backButton', function () {
+    if (CL.webOpen && WEB) { WEB.back().then(function (r) { if (r && r.open === false) CL.webOpen = false; }); return; }
+    if (goBack()) return;
+    if (Date.now() - lastBack < 2200) AppPlugin.exitApp(); else { lastBack = Date.now(); toast('بند کرنے کے لیے دوبارہ بیک دبائیں', 'Press back again to exit'); }
+  }); } catch (e) { /* back button stays default */ }
 
   /* ---------- chrome ---------- */
   function langToggle() {
@@ -299,6 +306,17 @@
     setNav(S.view !== 'gate' && S.view !== 'scanning');
     setBottom('');
     fn();
+    topBack();
+  }
+  /* on-screen back button on every inner screen (the same as the phone's back key) */
+  function topBack() {
+    var old = document.getElementById('tbk'); if (old) old.remove();
+    if (!S.back.length || S.view === 'gate' || S.view === 'scanning') return;
+    var top = document.querySelector('.top'); if (!top) return;
+    var b = document.createElement('button'); b.id = 'tbk'; b.className = 'tbk'; b.setAttribute('aria-label', 'back');
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="' + (PREF.lang === 'en' ? '' : 'transform:scaleX(-1)') + '"><polyline points="15 18 9 12 15 6"/></svg>';
+    b.onclick = function () { goBack(); };
+    top.insertBefore(b, top.firstChild);
   }
 
   function needScan() {

@@ -81,7 +81,15 @@ window.CLifeInit3 = function (CL) {
     out.sort(function (a, b) { return b.d - a.d; });
     return out.slice(0, n);
   }
-  function open(url) { if (CL.openUrl) CL.openUrl(url); else window.open(url, '_blank'); }
+  /* opens inside Cleanova's own window (native in-app browser); falls back to the phone's browser */
+  function open(url, title) {
+    var W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Web;
+    if (/^https?:\/\//.test(url) && W && !window.CLEANOVA_MOCK) {
+      url = url.replace(/^https?:\/\/(www\.)?youtube\.com/, 'https://m.youtube.com');
+      CL.webOpen = true;
+      W.open({ url: url, title: title || '', rtl: CL.PREF.lang !== 'en' }).catch(function () { CL.webOpen = false; if (CL.openUrl) CL.openUrl(url); });
+    } else if (CL.openUrl) CL.openUrl(url); else window.open(url, '_blank');
+  }
 
   /* ---------- home cards ---------- */
   var rot = null;
@@ -106,11 +114,11 @@ window.CLifeInit3 = function (CL) {
       $('#nwsSl').innerHTML = '<button class="nwsb" data-nl="' + esc(i.l) + '"><span class="src"><i>' + esc(CAT_IC[i.c] || '') + ' ' + catName(i.c) + '</i><span>' + esc(oname(i.o)) + (i.d ? ' · ' + ago(i.d) : '') + '</span></span><b dir="auto">' + esc(i.t) + '</b></button>';
       var dots = $('#nwsDt'); if (dots) dots.innerHTML = list.map(function (_, j) { return '<i class="' + (j === k % list.length ? 'on' : '') + '"></i>'; }).join('');
       var pb = $('#nwsPb'); if (pb && speed) { pb.style.transition = 'none'; pb.style.width = '0'; void pb.offsetWidth; pb.style.transition = 'width ' + speed + 'ms linear'; pb.style.width = '100%'; }
-      [].forEach.call(document.querySelectorAll('#nwsSl [data-nl]'), function (b) { b.onclick = function () { open(b.dataset.nl); }; });
+      [].forEach.call(document.querySelectorAll('#nwsSl [data-nl]'), function (b) { b.onclick = function () { open(b.dataset.nl, 'News'); }; });
     }
     if (!speed) {
       host.innerHTML = list.map(function (i) { return '<button class="nwsb" data-nl="' + esc(i.l) + '" style="margin-bottom:6px"><span class="src"><i>' + esc(CAT_IC[i.c] || '') + ' ' + catName(i.c) + '</i><span>' + esc(oname(i.o)) + (i.d ? ' · ' + ago(i.d) : '') + '</span></span><b dir="auto">' + esc(i.t) + '</b></button>'; }).join('');
-      [].forEach.call(host.querySelectorAll('[data-nl]'), function (b) { b.onclick = function () { open(b.dataset.nl); }; });
+      [].forEach.call(host.querySelectorAll('[data-nl]'), function (b) { b.onclick = function () { open(b.dataset.nl, 'News'); }; });
       return;
     }
     show(0); stopRot();
@@ -162,7 +170,7 @@ window.CLifeInit3 = function (CL) {
     $('#body').innerHTML = h;
     bind('nv', function (v) { nav(v); });
     bind('nc', function (v) { NF.cat = v; vNews(); });
-    bind('nl', function (v) { open(v); });
+    bind('nl', function (v, el) { open(v, 'News'); });
     $('#nref').onclick = function () { this.textContent = '…'; refresh(true).then(function () { if (S.view === 'news') vNews(); }); };
     if (!c || Date.now() - c.t > 15 * 60000) refresh(false).then(function (r) { if (S.view === 'news' && r && (!c || r.t !== c.t)) vNews(); });
   }
@@ -198,12 +206,12 @@ window.CLifeInit3 = function (CL) {
         '<button class="live" data-tl="' + esc(c.u) + '">● ' + tt('لائیو', 'LIVE') + '</button><button class="sbtn tsm" data-ts="' + esc(c.s) + '" aria-label="search">🔍</button><button class="sbtn tsm" data-te="' + c.id + '" aria-label="edit">✎</button></div>';
     }).join('') : '<div class="card center"><p class="mut">' + tt('ابھی کوئی اپنا چینل نہیں۔ نیچے "چینل شامل کریں" دبائیں۔', 'No channels yet. Tap "Add channel" below.') + '</p></div>';
     h += '<button class="sbtn" id="tadd" style="width:100%;margin-top:6px">＋ ' + tt('اپنا چینل شامل کریں', 'Add your own channel') + '</button>' +
-      '<p class="note">' + tt('بٹن دبانے پر چینل کی اپنی یوٹیوب لائیو نشریات کھلتی ہے (یوٹیوب ایپ میں)۔ ایپ نشریات خود نہیں چلاتی۔ اگر چینل اس وقت لائیو نہ ہو یا لنک بدل گیا ہو تو 🔍 سے یوٹیوب پر تلاش کریں، یا ✎ سے لنک خود بدل دیں۔', 'The button opens the channel\'s own YouTube live stream (in the YouTube app); this app does not play streams itself. If a channel is not live or a link changed, use 🔍 to search YouTube or ✎ to edit the link.') + '</p>' + CL.footer();
+      '<p class="note">' + tt('بٹن دبانے پر چینل کی اپنی یوٹیوب لائیو نشریات کلینووا کی اپنی ونڈو میں کھلتی ہے۔ پیچھے جانے کے لیے ◀ یا فون کا بیک دبائیں۔ اگر چینل اس وقت لائیو نہ ہو یا لنک بدل گیا ہو تو 🔍 سے یوٹیوب پر تلاش کریں، یا ✎ سے لنک خود بدل دیں۔', 'The button opens the channel\'s own YouTube live stream in Cleanova\'s own window; press back to return. If a channel is not live or a link changed, use 🔍 to search YouTube or ✎ to edit the link.') + '</p>' + CL.footer();
     $('#body').innerHTML = h;
     bind('nv', function (v) { nav(v); });
     bind('tg', function (v) { TF.g = v; vTv(); });
-    bind('tl', function (u) { open(u); });
-    bind('ts', function (s) { open(ysearch(s)); });
+    bind('tl', function (u, el) { var b = el.closest('.tvr').querySelector('b'); open(u, b ? b.textContent : ''); });
+    bind('ts', function (s) { open(ysearch(s), 'YouTube'); });
     bind('te', function (id) {
       var c = chans(TF.g).filter(function (x) { return x.id === id; })[0]; if (!c) return;
       CL.ask(tt('لنک: ', 'Link: ') + c.n, c.u, function (v) {
