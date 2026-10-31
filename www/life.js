@@ -35,7 +35,18 @@ window.CLifeInit = function (CL) {
 
   /* ================= HOME ================= */
   var HM = { today: null, steps: 0, bat: null };
-  function hijri() { try { return new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).replace(' AH', ''); } catch (e) { return ''; } }
+  /* Hijri date computed here (tabular calendar), so it never depends on the phone's browser supporting the Islamic calendar */
+  function hijri() {
+    try {
+      var d = new Date(), jd = Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000) + 2440588 - 0.5 + 0.5;
+      var l = Math.floor(jd - 1948440 + 10632), n = Math.floor((l - 1) / 10631); l = l - 10631 * n + 354;
+      var j = (Math.floor((10985 - l) / 5316)) * (Math.floor((50 * l) / 17719)) + (Math.floor(l / 5670)) * (Math.floor((43 * l) / 15238));
+      l = l - (Math.floor((30 - j) / 15)) * (Math.floor((17719 * j) / 50)) - (Math.floor(j / 16)) * (Math.floor((15238 * j) / 43)) + 29;
+      var m = Math.floor((24 * l) / 709), day = l - Math.floor((709 * m) / 24), yr = 30 * n + j - 30;
+      var M = ['Muharram', 'Safar', "Rabi' I", "Rabi' II", 'Jumada I', 'Jumada II', 'Rajab', "Sha'ban", 'Ramadan', 'Shawwal', "Dhu al-Qi'dah", 'Dhu al-Hijjah'];
+      return day + ' ' + M[m - 1] + ' ' + yr;
+    } catch (e) { return ''; }
+  }
   function loadHome() {
     TP.autoStatus().then(function (r) { HM.auto = r; if (r.on && r.loc && !CL.svcKick) { CL.svcKick = 1; TP.autoSet({ on: true }).catch(function () { /* ignore */ }); } HM.steps = r.stepsToday || 0; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
     TP.dayList({ days: 2 }).then(function (r) { var k = dkey(); HM.today = ((r && r.days) || []).filter(function (x) { return x.date === k; })[0] || null; if (HM.today && HM.today.steps > HM.steps) HM.steps = HM.today.steps; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
