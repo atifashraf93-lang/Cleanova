@@ -398,6 +398,13 @@ public class TravelPlugin extends Plugin {
         }).start();
     }
 
+    @Override
+    public void load() {
+        try {
+            if (sp().getBoolean("auto", false) && getPermissionState("location") == PermissionState.GRANTED) restartSvc();
+        } catch (Throwable t) { /* the app restarts it from the screen */ }
+    }
+
     private void restartSvc() {
         Intent i = new Intent(ctx(), TrackService.class);
         if (Build.VERSION.SDK_INT >= 26) ctx().startForegroundService(i); else ctx().startService(i);

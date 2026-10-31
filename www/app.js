@@ -684,7 +684,7 @@
     if (!soft) {
       clearDays();
       var load = function () {
-        TP.autoStatus().then(function (r) { Dd.auto = r; if (S.view === 'days') vDays(true); }).catch(function () { Dd.auto = { on: false, loc: false }; });
+        TP.autoStatus().then(function (r) { Dd.auto = r; if (r.on && r.loc && !CL.svcKick) { CL.svcKick = 1; TP.autoSet({ on: true }).catch(function () { /* ignore */ }); } if (S.view === 'days') vDays(true); }).catch(function () { Dd.auto = { on: false, loc: false }; });
         TP.dayList({ days: 60 }).then(function (r) { Dd.days = (r && r.days) || []; if (S.view === 'days') vDays(true); }).catch(function () { Dd.days = []; });
       };
       load(); dayTimer = setInterval(function () { if (S.view !== 'days') return clearDays(); load(); }, 15000);
@@ -699,7 +699,7 @@
       h += '<div class="card" style="margin-top:6px"><div class="kv"><span>' + tt('روزانہ ریکارڈ', 'Daily record') + '</span><b style="color:var(--acc)">' + tt('جاری ● ', 'ON ● ') + '</b></div>' +
         (!au.bg ? '<p class="mut" style="font-size:12.5px;margin:6px 0">' + tt('⚠ ایپ بند ہونے پر بھی ریکارڈ کے لیے لوکیشن میں "ہر وقت اجازت دیں" (Allow all the time) چنیں۔', '⚠ For recording while the app is closed, choose "Allow all the time" for Location.') + '</p><button class="btn" id="dyBg" style="min-height:44px;font-size:15px">' + T('لوکیشن کی ترتیب کھولیں', 'Open location setting') + '</button>' : '') +
         (!au.activity ? '<p class="mut" style="font-size:12.5px;margin:6px 0">' + tt('قدم گننے کے لیے "جسمانی سرگرمی" کی اجازت دیں۔', 'Allow "Physical activity" to count steps.') + '</p><button class="btn" id="dyAct" style="min-height:44px;font-size:15px">' + T('اجازت دیں', 'Allow') + '</button>' : '') +
-        '<div class="note" style="margin-top:10px;direction:ltr;text-align:start">' + (au.fixT ? tt('آخری لوکیشن: ', 'Last location: ') + Math.max(0, Math.round((Date.now() - au.fixT) / 60000)) + tt(' منٹ پہلے · ', ' min ago · ') + esc(au.fixProv || '') + ' · ' + au.fixAcc + ' m' : tt('ابھی تک کوئی لوکیشن نہیں ملی', 'No location received yet')) + (au.motion ? ' · ' + tt('حرکت سینسر: ', 'motion sensor: ') + au.motion : '') + '</div>' +
+        '<div class="note" style="margin-top:10px;direction:ltr;text-align:start">' + (au.fixT ? tt('آخری لوکیشن: ', 'Last location: ') + Math.max(0, Math.round((Date.now() - au.fixT) / 60000)) + tt(' منٹ پہلے · ', ' min ago · ') + esc(au.fixProv || '') + ' · ' + au.fixAcc + ' m' : tt('ابھی تک کوئی لوکیشن نہیں ملی', 'No location received yet')) + (au.motion ? ' · ' + tt('حرکت سینسر: ', 'motion sensor: ') + au.motion : '') + ' · ' + (au.startT ? tt('سروس شروع: ', 'service started: ') + Math.round((Date.now() - au.startT) / 60000) + tt(' منٹ پہلے', ' min ago') : tt('سروس شروع نہیں ہوئی', 'service not started')) + '</div>' +
         (au.gpsEnabled === false ? '<div class="warn">' + tt('فون کی سیٹنگ میں لوکیشن (GPS) بند ہے، اسے آن کریں۔', 'Location (GPS) is turned off in phone settings; turn it on.') + '</div>' : '') +
         (au.err ? '<div class="warn">' + esc(au.err) + '</div>' : '') +
         (au.batteryOk === false ? '<div class="warn">' + tt('فون بیٹری بچت کے نام پر ایپ کو بند کر سکتا ہے۔ نیچے دبا کر Cleanova کو "Unrestricted / کوئی پابندی نہیں" کریں۔', 'The phone may stop the app to save battery. Tap below and set Cleanova to "Unrestricted".') + '</div><button class="btn" id="dyBat" style="min-height:44px;font-size:15px">' + T('بیٹری کی ترتیب کھولیں', 'Open battery setting') + '</button>' : '') +

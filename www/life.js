@@ -37,7 +37,7 @@ window.CLifeInit = function (CL) {
   var HM = { today: null, steps: 0, bat: null };
   function hijri() { try { return new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).replace(' AH', ''); } catch (e) { return ''; } }
   function loadHome() {
-    TP.autoStatus().then(function (r) { HM.auto = r; HM.steps = r.stepsToday || 0; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
+    TP.autoStatus().then(function (r) { HM.auto = r; if (r.on && r.loc && !CL.svcKick) { CL.svcKick = 1; TP.autoSet({ on: true }).catch(function () { /* ignore */ }); } HM.steps = r.stepsToday || 0; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
     TP.dayList({ days: 2 }).then(function (r) { var k = dkey(); HM.today = ((r && r.days) || []).filter(function (x) { return x.date === k; })[0] || null; if (HM.today && HM.today.steps > HM.steps) HM.steps = HM.today.steps; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
     MP.snapshot().then(function (s) { HM.bat = s && s.battery ? s.battery.level : null; if (S.view === 'life') V.life(true); }).catch(function () { /* none */ });
   }
