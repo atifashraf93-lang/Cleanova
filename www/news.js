@@ -26,7 +26,8 @@ window.CLifeInit3 = function (CL) {
   function setP(k, v) { lset('news.' + k, v); }
   function srcOn() { var s = P('src', null); return s || OUTLETS.map(function (o) { return o.id; }); }
   function hcats() { return P('hcats', ['pk', 'urdu', 'world']); }
-  var SPEED = { off: 0, slow: 8000, norm: 5000, fast: 3000 };
+  var SPEED = { off: 0, slow: 9000, norm: 7000, fast: 4500 };
+  var TICK = { off: 0, slow: 20, norm: 30, fast: 45 }; /* pixels per second */
   CL.navFilter = function (t) { return t.id !== 'news' || P('tab', true) !== false; };
 
   /* ---------- fetching ---------- */
@@ -88,8 +89,17 @@ window.CLifeInit3 = function (CL) {
   function homeNews() {
     var list = homeItems(), host = $('#nwsSl'); if (!host) return;
     if (!list.length) { host.innerHTML = '<span class="mut">' + tt('خبریں لوڈ ہو رہی ہیں… (انٹرنیٹ چاہیے)', 'Loading headlines… (needs internet)') + '</span>'; $('#nwsRun').textContent = ''; return; }
-    $('#nwsRun').textContent = list.map(function (i) { return '•  ' + i.t; }).join('     ');
-    $('#nwsRun').style.animationDuration = Math.max(20, list.join('').length / 6) + 's';
+    var tk = TICK[P('tick', 'norm')], run = $('#nwsRun');
+    if (!tk) { var row = $('#nwsTk'); if (row) row.style.display = 'none'; }
+    else {
+      /* ticker: the next headlines (not the one already shown below), at a steady reading speed */
+      var pool = items('all').filter(function (i) { return hcats().indexOf(i.c) >= 0; }), more = pool.filter(function (i) { return list.indexOf(i) < 0; }).slice(0, 8);
+      if (more.length < 3) more = pool.slice(0, 8);
+      run.textContent = more.map(function (i) { return '•  ' + i.t; }).join('        ');
+      run.style.animation = 'none'; void run.offsetWidth;
+      var w = run.scrollWidth + ($('#nwsTk .trk') ? $('#nwsTk .trk').clientWidth : 300);
+      run.style.animation = 'nmq ' + Math.round(w / tk) + 's linear infinite';
+    }
     var idx = 0, speed = SPEED[P('rot', 'norm')];
     function show(k) {
       var i = list[k % list.length]; if (!$('#nwsSl')) return;
@@ -104,7 +114,14 @@ window.CLifeInit3 = function (CL) {
       return;
     }
     show(0); stopRot();
-    rot = setInterval(function () { if (!$('#nwsSl') || document.hidden) { if (!$('#nwsSl')) stopRot(); return; } idx++; show(idx); }, speed);
+    var held = false, due = Date.now() + speed + Math.min(5000, list[0].t.length * 40);
+    host.ontouchstart = function () { held = true; }; host.ontouchend = host.ontouchcancel = function () { held = false; due = Date.now() + 3000; };
+    rot = setInterval(function () {
+      if (!$('#nwsSl')) { stopRot(); return; }
+      if (document.hidden || held || Date.now() < due) return;
+      idx++; show(idx); var cur = list[idx % list.length]; due = Date.now() + speed + Math.min(5000, cur.t.length * 40);
+      var pb = $('#nwsPb'); if (pb) { pb.style.transition = 'none'; pb.style.width = '0'; void pb.offsetWidth; pb.style.transition = 'width ' + (due - Date.now()) + 'ms linear'; pb.style.width = '100%'; }
+    }, 500);
   }
   function injectHome() {
     if (S.view !== 'life') { stopRot(); return; }
@@ -112,7 +129,7 @@ window.CLifeInit3 = function (CL) {
     var h = '';
     if (P('home', true) !== false) {
       h += '<div class="card nws" id="nwsC"><div class="nh"><b>📰 ' + tt('آج کی اہم خبریں', "Today's headlines") + '</b><button class="sbtn nmore" data-nv="news">' + tt('سب', 'All') + ' ›</button></div>' +
-        '<div class="tk"><em>' + tt('تازہ', 'LIVE') + '</em><div class="trk"><span id="nwsRun" dir="auto"></span></div></div>' +
+        '<div class="tk" id="nwsTk"><em>' + tt('تازہ', 'LIVE') + '</em><div class="trk"><span id="nwsRun" dir="auto"></span></div></div>' +
         '<div id="nwsSl" class="nsl"></div><div class="ndots" id="nwsDt"></div>' + (SPEED[P('rot', 'norm')] ? '<div class="npb"><i id="nwsPb"></i></div>' : '') + '</div>';
     }
     if (P('tvcard', true) !== false) {
@@ -215,7 +232,8 @@ window.CLifeInit3 = function (CL) {
     CL.setTop(T('خبروں کی ترتیبات', 'News settings')); stopRot();
     var hc = hcats(), on = srcOn();
     var h = '<div class="card" style="margin-top:8px">' + sw('nh', 'ہوم پر آج کی خبریں', 'Headlines on home', P('home', true) !== false) + sw('nt', 'ہوم پر لائیو چینل کارڈ', 'Live channels card on home', P('tvcard', true) !== false) + sw('nb', 'نیچے "خبریں" ٹیب دکھائیں', 'Show the News tab at the bottom', P('tab', true) !== false) + '</div>' +
-      '<div class="card"><b>' + tt('خودکار گھومنا', 'Auto-rotate') + '</b><span class="fl">' + tt('ہوم پر سرخیاں خود بدلنے کی رفتار', 'How fast home headlines change') + '</span>' + chips([['off', ['بند', 'Off']], ['slow', ['آہستہ', 'Slow']], ['norm', ['عام', 'Normal']], ['fast', ['تیز', 'Fast']]], P('rot', 'norm'), 'nr') +
+      '<div class="card"><b>' + tt('خودکار گھومنا', 'Auto-rotate') + '</b><span class="fl">' + tt('ہوم پر سرخی بدلنے کی رفتار (لمبی سرخی پر زیادہ دیر رکتی ہے)', 'How fast home headlines change (longer headlines stay longer)') + '</span>' + chips([['off', ['بند', 'Off']], ['slow', ['آہستہ', 'Slow']], ['norm', ['عام', 'Normal']], ['fast', ['تیز', 'Fast']]], P('rot', 'norm'), 'nr') +
+      '<span class="fl">' + tt('اوپر چلتی پٹی کی رفتار', 'Scrolling ticker speed') + '</span>' + chips([['off', ['بند', 'Off']], ['slow', ['آہستہ', 'Slow']], ['norm', ['عام', 'Normal']], ['fast', ['تیز', 'Fast']]], P('tick', 'norm'), 'nk') +
       '<span class="fl">' + tt('ہوم پر سرخیوں کی تعداد', 'Headlines on home') + '</span>' + chips([[1, ['۱', '1']], [2, ['۲', '2']], [3, ['۳', '3']], [4, ['۴', '4']], [5, ['۵', '5']]], P('count', 4), 'nn') + '</div>' +
       '<div class="card"><b>' + tt('ہوم پر کون سی خبریں', 'Home categories') + '</b><div class="chips">' + CATS.slice(1).map(function (x) { return '<button class="chip' + (hc.indexOf(x[0]) >= 0 ? ' on' : '') + '" data-nhc="' + x[0] + '">' + L(x[1]) + '</button>'; }).join('') + '</div></div>' +
       '<div class="card"><b>' + tt('خبر کے ادارے', 'Sources') + '</b><div class="chips">' + OUTLETS.map(function (o) { return '<button class="chip' + (on.indexOf(o.id) >= 0 ? ' on' : '') + '" data-nso="' + o.id + '">' + L(o.n) + '</button>'; }).join('') + '</div></div>' +
@@ -225,6 +243,7 @@ window.CLifeInit3 = function (CL) {
     function tog(id, key, def) { $('#' + id).onclick = function () { setP(key, !(P(key, def) !== false)); vNewsSet(); if (key === 'tab') CL.render(); }; }
     tog('nh', 'home', true); tog('nt', 'tvcard', true); tog('nb', 'tab', true);
     bind('nr', function (v) { setP('rot', v); vNewsSet(); });
+    bind('nk', function (v) { setP('tick', v); vNewsSet(); });
     bind('nn', function (v) { setP('count', +v); vNewsSet(); });
     bind('nhc', function (k) { var l = hcats().slice(), i = l.indexOf(k); if (i >= 0) l.splice(i, 1); else l.push(k); setP('hcats', l); vNewsSet(); });
     bind('nso', function (k) { var l = srcOn().slice(), i = l.indexOf(k); if (i >= 0) { if (l.length > 1) l.splice(i, 1); } else l.push(k); setP('src', l); lset('news.cache', null); vNewsSet(); });
