@@ -511,4 +511,5 @@ window.CLifeInit2 = function (CL) {
     } catch (e) { /* ignore */ }
   }, 4000);
   if (window.CLifeInit3) window.CLifeInit3(CL);
+  if (window.CLifeInit4) window.CLifeInit4(CL);
 };

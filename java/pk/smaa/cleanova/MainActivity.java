@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(TravelPlugin.class);
         registerPlugin(SafetyPlugin.class);
         registerPlugin(WebPlugin.class);
+        registerPlugin(BackupPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
