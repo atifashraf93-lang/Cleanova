@@ -303,7 +303,7 @@ window.CLifeInit5 = function (CL) {
     CL.setTop(T('قبلہ', 'Qibla'));
     $('#body').innerHTML = '<div class="lhero" id="qbox" style="margin-top:8px;text-align:center"><div class="qc" id="qc"><i id="qn"></i><span class="qk">🕋</span></div><div class="big2" id="qd" style="text-align:center;color:var(--acc)">…</div><div class="mut" id="qs"></div></div><p class="note">' + tt('فون کو زمین کے برابر رکھیں اور دھات اور میگنیٹ سے دور۔ اگر سوئی غلط لگے تو فون کو آٹھ (8) کی شکل میں گھمائیں۔ مقام نہ ملے تو ڈگری سے راستہ لے لیں۔', 'Hold the phone flat, away from metal and magnets. If the needle looks wrong, move the phone in a figure of 8. If no location is found, use the bearing in degrees.') + '</p>' + CL.footer();
     function draw() {
-      if (QS.lat === null) return;
+      if (QS.lat === null || !$('#qd')) return;
       var q = E.qibla(QS.lat, QS.lon);
       $('#qd').innerHTML = Math.round(q.bearing) + '° <small style="font-size:14px">' + tt('شمال سے', 'from North') + '</small>';
       $('#qs').textContent = tt('کعبہ تک ', 'Distance to Kaaba ') + Math.round(q.km).toLocaleString('en') + ' km · ' + QS.src;
@@ -316,6 +316,7 @@ window.CLifeInit5 = function (CL) {
     if (saved) loc(saved[0], saved[1], tt('محفوظ مقام', 'saved location'));
     try { navigator.geolocation.getCurrentPosition(function (p) { loc(p.coords.latitude, p.coords.longitude, tt('آپ کا مقام', 'your location')); }, function () { if (!saved) loc(31.5204, 74.3587, tt('لاہور (اندازہ)', 'Lahore (default)')); }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }); } catch (e) { if (!saved) loc(31.5204, 74.3587, 'Lahore'); }
     var onO = function (ev) {
+      if (!$('#qd')) { window.removeEventListener(evn, onO, true); return; }
       var h = null;
       if (ev.webkitCompassHeading !== undefined && ev.webkitCompassHeading !== null) h = ev.webkitCompassHeading;
       else if (ev.alpha !== null && ev.alpha !== undefined) h = (360 - ev.alpha) % 360;
