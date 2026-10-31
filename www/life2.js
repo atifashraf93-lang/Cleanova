@@ -41,7 +41,7 @@ window.CLifeInit2 = function (CL) {
     $('#askx').onclick = function () { m.hidden = true; }; $('#asko').onclick = function () { var v = $('#askv').value.trim(); m.hidden = true; if (v) cb(v); };
     setTimeout(function () { var i = $('#askv'); if (i) i.focus(); }, 100);
   }
-  CL.ask = ask;
+  CL.ask = ask; CL.openUrl = openUrl;
 
   /* ================= VOICE ================= */
   var NW = { 'ایک': 1, 'دو': 2, 'تین': 3, 'چار': 4, 'پانچ': 5, 'چھ': 6, 'چھے': 6, 'سات': 7, 'آٹھ': 8, 'نو': 9, 'دس': 10, 'گیارہ': 11, 'بارہ': 12, 'تیرہ': 13, 'چودہ': 14, 'پندرہ': 15, 'سولہ': 16, 'سترہ': 17, 'اٹھارہ': 18, 'انیس': 19, 'بیس': 20, 'تیس': 30, 'چالیس': 40, 'پچاس': 50, 'ساٹھ': 60, 'ستر': 70, 'اسی': 80, 'نوے': 90, 'سو': 100, 'ہزار': 1000, 'لاکھ': 100000, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100, thousand: 1000, lakh: 100000, lac: 100000 };
@@ -510,4 +510,5 @@ window.CLifeInit2 = function (CL) {
       A.getInfo().then(function (i) { var cur = parseInt(String(i.version).split('.').pop(), 10); return getJson('https://api.github.com/repos/atifashraf93-lang/Cleanova/releases/latest', 8000).then(function (r) { var n = parseInt(String(r.tag_name).replace(/\D/g, ''), 10); if (n > cur) lset('upd', { tag: r.tag_name, url: r.html_url }); else lset('upd', null); }); }).catch(function () { /* ignore */ });
     } catch (e) { /* ignore */ }
   }, 4000);
+  if (window.CLifeInit3) window.CLifeInit3(CL);
 };

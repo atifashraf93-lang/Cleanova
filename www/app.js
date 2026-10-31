@@ -235,12 +235,14 @@
     id: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="11" r="2.2"/><path d="M5.5 17c.6-2 2-3 3.5-3s2.9 1 3.5 3"/><line x1="15" y1="10" x2="19" y2="10"/><line x1="15" y1="14" x2="18" y2="14"/>',
     check: '<polyline points="20 6 9 17 4 12"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
-    phoneCall: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>'
+    phoneCall: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+    news: '<path d="M4 4h13a2 2 0 0 1 2 2v13a1 1 0 0 0 1 1H6a2 2 0 0 1-2-2z"/><path d="M19 8h2v11a1 1 0 0 1-1 1"/><line x1="8" y1="8" x2="15" y2="8"/><line x1="8" y1="12" x2="15" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/>',
+    tv: '<rect x="2" y="5" width="20" height="14" rx="2"/><polyline points="8 2 12 5 16 2"/>'
   };
   function ico(n, cls) { return '<svg class="i ' + (cls || '') + '" viewBox="0 0 24 24">' + (IC[n] || '') + '</svg>'; }
   var TABS = [
     { id: 'life', ic: ico('home'), ur: 'ہوم', en: 'Home' }, { id: 'days', ic: ico('route'), ur: 'سفرنامہ', en: 'Travel' },
-    { id: 'health', ic: ico('heart'), ur: 'صحت', en: 'Health' }, { id: 'home', ic: ico('grid'), ur: 'ٹولز', en: 'Tools' }, { id: 'settings', ic: ico('sl'), ur: 'ترتیبات', en: 'Settings' }
+    { id: 'health', ic: ico('heart'), ur: 'صحت', en: 'Health' }, { id: 'news', ic: ico('news'), ur: 'خبریں', en: 'News' }, { id: 'home', ic: ico('grid'), ur: 'ٹولز', en: 'Tools' }, { id: 'settings', ic: ico('sl'), ur: 'ترتیبات', en: 'Settings' }
   ];
   var TAB_OF = { life: 'life', home: 'home', overview: 'home', dups: 'home', review: 'home', list: 'home', wa: 'home', trash: 'home', settings: 'settings', done: 'home', contacts: 'home', monitor: 'home', trips: 'days', trip: 'days', days: 'days', day: 'days' };
   function go(view, extra) { S.back.push({ view: S.view, review: S.review, list: S.list }); S.view = view; if (extra !== undefined) { if (view === 'review') S.review = extra; else S.list = extra; } S.limit = 150; render(); }
@@ -269,7 +271,7 @@
   function setNav(on) {
     var n = $('#nav'); n.hidden = !on; if (!on) return;
     var cur = TAB_OF[S.view];
-    n.innerHTML = TABS.map(function (t) { return '<button data-tab="' + t.id + '" class="' + (t.id === cur ? 'on' : '') + '"><i>' + t.ic + '</i>' + (PREF.lang === 'en' ? t.en : t.ur) + '</button>'; }).join('');
+    n.innerHTML = (CL.navFilter ? TABS.filter(CL.navFilter) : TABS).map(function (t) { return '<button data-tab="' + t.id + '" class="' + (t.id === cur ? 'on' : '') + '"><i>' + t.ic + '</i>' + (PREF.lang === 'en' ? t.en : t.ur) + '</button>'; }).join('');
     [].forEach.call(n.querySelectorAll('[data-tab]'), function (b) {
       b.onclick = function () {
         var id = b.dataset.tab; S.back = [];
