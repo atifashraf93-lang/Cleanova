@@ -699,6 +699,10 @@
       h += '<div class="card" style="margin-top:6px"><div class="kv"><span>' + tt('روزانہ ریکارڈ', 'Daily record') + '</span><b style="color:var(--acc)">' + tt('جاری ● ', 'ON ● ') + '</b></div>' +
         (!au.bg ? '<p class="mut" style="font-size:12.5px;margin:6px 0">' + tt('⚠ ایپ بند ہونے پر بھی ریکارڈ کے لیے لوکیشن میں "ہر وقت اجازت دیں" (Allow all the time) چنیں۔', '⚠ For recording while the app is closed, choose "Allow all the time" for Location.') + '</p><button class="btn" id="dyBg" style="min-height:44px;font-size:15px">' + T('لوکیشن کی ترتیب کھولیں', 'Open location setting') + '</button>' : '') +
         (!au.activity ? '<p class="mut" style="font-size:12.5px;margin:6px 0">' + tt('قدم گننے کے لیے "جسمانی سرگرمی" کی اجازت دیں۔', 'Allow "Physical activity" to count steps.') + '</p><button class="btn" id="dyAct" style="min-height:44px;font-size:15px">' + T('اجازت دیں', 'Allow') + '</button>' : '') +
+        '<div class="note" style="margin-top:10px;direction:ltr;text-align:start">' + (au.fixT ? tt('آخری لوکیشن: ', 'Last location: ') + Math.max(0, Math.round((Date.now() - au.fixT) / 60000)) + tt(' منٹ پہلے · ', ' min ago · ') + esc(au.fixProv || '') + ' · ' + au.fixAcc + ' m' : tt('ابھی تک کوئی لوکیشن نہیں ملی', 'No location received yet')) + (au.motion ? ' · ' + tt('حرکت سینسر: ', 'motion sensor: ') + au.motion : '') + '</div>' +
+        (au.gpsEnabled === false ? '<div class="warn">' + tt('فون کی سیٹنگ میں لوکیشن (GPS) بند ہے، اسے آن کریں۔', 'Location (GPS) is turned off in phone settings; turn it on.') + '</div>' : '') +
+        (au.err ? '<div class="warn">' + esc(au.err) + '</div>' : '') +
+        (au.batteryOk === false ? '<div class="warn">' + tt('فون بیٹری بچت کے نام پر ایپ کو بند کر سکتا ہے۔ نیچے دبا کر Cleanova کو "Unrestricted / کوئی پابندی نہیں" کریں۔', 'The phone may stop the app to save battery. Tap below and set Cleanova to "Unrestricted".') + '</div><button class="btn" id="dyBat" style="min-height:44px;font-size:15px">' + T('بیٹری کی ترتیب کھولیں', 'Open battery setting') + '</button>' : '') +
         '<button class="btn" id="dyOff" style="background:var(--card2);color:var(--text);box-shadow:none;border:1px solid var(--line);min-height:44px;font-size:15px">' + T('ریکارڈ بند کریں', 'Stop recording') + '</button></div>';
     }
     var todayK = (function () { var d = new Date(); return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0'); })();
@@ -719,6 +723,7 @@
         .then(function () { toast('روزانہ ریکارڈ شروع', 'Daily record started'); vDays(); }).catch(function () { /* declined */ });
     };
     var off = $('#dyOff'); if (off) off.onclick = function () { TP.autoSet({ on: false }).then(function () { vDays(); }); };
+    var bt = $('#dyBat'); if (bt) bt.onclick = function () { MP.batteryOptOpen().catch(function () { /* ignore */ }); };
     var bg = $('#dyBg'); if (bg) bg.onclick = function () { TP.permRequest({ which: 'bgloc' }).then(function () { vDays(); }); };
     var ac = $('#dyAct'); if (ac) ac.onclick = function () { TP.permRequest({ which: 'activity' }).then(function () { vDays(); }); };
     var tb = $('#dyToday'); if (tb) tb.onclick = function () { S.day = { date: todayK }; go('day'); };

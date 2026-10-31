@@ -412,6 +412,18 @@ public class TravelPlugin extends Plugin {
         r.put("bg", Build.VERSION.SDK_INT < 29 || getPermissionState("bgloc") == PermissionState.GRANTED);
         r.put("activity", Build.VERSION.SDK_INT < 29 || getPermissionState("activity") == PermissionState.GRANTED);
         r.put("stepsToday", sp().getFloat("steps_" + TrackService.dayKey(System.currentTimeMillis()), 0f));
+        r.put("fixT", sp().getLong("dg_fix", 0));
+        r.put("fixProv", sp().getString("dg_prov", ""));
+        r.put("fixAcc", sp().getInt("dg_acc", 0));
+        r.put("startT", Long.parseLong(sp().getString("dg_start", "0")));
+        r.put("err", sp().getString("dg_err", ""));
+        r.put("motion", sp().getString("dg_motion", ""));
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) ctx().getSystemService(Context.POWER_SERVICE);
+            r.put("batteryOk", Build.VERSION.SDK_INT < 23 || pm.isIgnoringBatteryOptimizations(ctx().getPackageName()));
+            android.location.LocationManager lmm = (android.location.LocationManager) ctx().getSystemService(Context.LOCATION_SERVICE);
+            r.put("gpsEnabled", lmm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER));
+        } catch (Throwable t) { /* unknown */ }
         call.resolve(r);
     }
 

@@ -119,7 +119,7 @@
       for (var i = 0; i < a.length - 1; i++) for (var q = 0; q < 8; q++) r.push({ t: t0 + (i * 8 + q) * 60000, lat: a[i][0] + (a[i + 1][0] - a[i][0]) * q / 8, lon: a[i][1] + (a[i + 1][1] - a[i][1]) * q / 8, m: i < 6 ? 2 : 1 });
       r.push({ t: t0 + 70 * 60000, lat: 24.8150, lon: 67.0270, m: 1 }); return r;
     }
-    T.autoStatus = function () { return Promise.resolve({ on: on, loc: true, bg: location.search.indexOf('nobg') < 0, activity: true, stepsToday: 5234 }); };
+    T.autoStatus = function () { return Promise.resolve({ on: on, loc: true, bg: location.search.indexOf('nobg') < 0, activity: true, stepsToday: 5234, fixT: Date.now() - 180000, fixProv: 'gps', fixAcc: 9, motion: 'yes', batteryOk: location.search.indexOf('batt') < 0, gpsEnabled: true, err: '' }); };
     T.autoSet = function (o) { on = o.on; return Promise.resolve(); };
     T.permRequest = function () { return T.autoStatus(); };
     T.dayList = function () { var out = []; for (var i = 0; i < 6; i++) out.push({ date: k(i), distance: 12000 + i * 3100, walk: 1800 + i * 200, vehicle: 10200 + i * 2900, movingSec: 3600 + i * 400, points: 220, steps: 4800 + i * 900 }); return Promise.resolve({ days: out }); };

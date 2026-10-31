@@ -15,6 +15,10 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.hardware.TriggerEvent;
+import android.hardware.TriggerEventListener;
+import android.os.Handler;
+import android.os.Looper;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -48,6 +52,27 @@ public class TrackService extends Service implements LocationListener, SensorEve
     private double stepAcc = 0;
     private float lastRaw = -1;
     private String stepDay = "";
+    private Sensor motion;
+    private boolean hasMotion = false, stepReg = false;
+    private Handler hd;
+    private final TriggerEventListener trig = new TriggerEventListener() {
+        @Override public void onTrigger(TriggerEvent ev) {
+            lastMove = System.currentTimeMillis(); setGps(true); armMotion();
+        }
+    };
+    private final Runnable idle = new Runnable() {
+        @Override public void run() {
+            try {
+                long now = System.currentTimeMillis();
+                if (gpsOn && tripOut == null && hasMotion && now - lastMove > 8 * 60 * 1000L) setGps(false);
+            } catch (Throwable t) { /* ignore */ }
+            if (hd != null) hd.postDelayed(this, 120000L);
+        }
+    };
+    private void diag(String k, String v) { try { getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(k, v).apply(); } catch (Throwable t) { /* ignore */ } }
+    private void armMotion() {
+        try { if (sm != null && motion != null) sm.requestTriggerSensor(trig, motion); } catch (Throwable t) { diag("dg_err", "motion: " + t); }
+    }
 
     static File dir(Context c) { File d = new File(c.getFilesDir(), "trips"); if (!d.exists()) d.mkdirs(); return d; }
     static File daysDir(Context c) { File d = new File(c.getFilesDir(), "days"); if (!d.exists()) d.mkdirs(); return d; }
@@ -75,13 +100,16 @@ public class TrackService extends Service implements LocationListener, SensorEve
         try {
             if (Build.VERSION.SDK_INT >= 29) startForeground(2, b.build(), 8);
             else startForeground(2, b.build());
-        } catch (Throwable t) { stopSelf(); return START_NOT_STICKY; }
+        } catch (Throwable t) { diag("dg_err", "foreground: " + t); stopSelf(); return START_NOT_STICKY; }
+        diag("dg_start", String.valueOf(System.currentTimeMillis()));
         if (lm == null) lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         try {
             if (!netOn && lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) { lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 60000L, 60f, this); netOn = true; }
             if (id != 0) setGps(true); else if (!gpsOn) setGps(false);
-        } catch (SecurityException e) { stopSelf(); return START_NOT_STICKY; }
+        } catch (SecurityException e) { diag("dg_err", "location permission: " + e); stopSelf(); return START_NOT_STICKY; }
         startSteps();
+        startMotion();
+        if (hd == null) { hd = new Handler(Looper.getMainLooper()); hd.postDelayed(idle, 120000L); }
         return START_STICKY;
     }
 
@@ -95,13 +123,24 @@ public class TrackService extends Service implements LocationListener, SensorEve
         } catch (SecurityException e) { /* permission lost */ }
     }
 
+    private void startMotion() {
+        try {
+            if (sm == null) sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+            if (motion == null) motion = sm.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION);
+            hasMotion = motion != null;
+            if (hasMotion) armMotion();
+            else if (tripOut == null) setGps(true);   /* no motion sensor: keep GPS on so nothing is missed */
+            diag("dg_motion", hasMotion ? "yes" : "no");
+        } catch (Throwable t) { diag("dg_err", "motion setup: " + t); }
+    }
+
     private void startSteps() {
         try {
-            if (sm != null) return;
+            if (stepReg) return;
             if (Build.VERSION.SDK_INT >= 29 && checkSelfPermission("android.permission.ACTIVITY_RECOGNITION") != PackageManager.PERMISSION_GRANTED) return;
-            sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+            if (sm == null) sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
             Sensor s = sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
-            if (s != null) sm.registerListener(this, s, SensorManager.SENSOR_DELAY_NORMAL);
+            if (s != null) { sm.registerListener(this, s, SensorManager.SENSOR_DELAY_NORMAL); stepReg = true; }
         } catch (Throwable t) { /* no step sensor */ }
     }
 
@@ -116,6 +155,7 @@ public class TrackService extends Service implements LocationListener, SensorEve
             if (lastRaw >= 0) { double delta = raw >= lastRaw ? raw - lastRaw : raw; if (delta < 5000) stepAcc += delta; }
             lastRaw = raw;
             long now = System.currentTimeMillis();
+            if (tripOut == null && hasMotion) { lastMove = now; setGps(true); }
             if (now - lastStepSave > 20000L) { lastStepSave = now; sp.edit().putFloat("steps_" + day, (float) stepAcc).putFloat("lastRaw", raw).apply(); }
         } catch (Throwable t) { /* ignore */ }
     }
@@ -125,8 +165,13 @@ public class TrackService extends Service implements LocationListener, SensorEve
     @Override
     public void onLocationChanged(Location l) {
         if (l == null) return;
-        if (l.hasAccuracy() && l.getAccuracy() > 80f) return;
         long now = System.currentTimeMillis();
+        if (l.hasAccuracy() && l.getAccuracy() > 80f) {
+            /* coarse (cell / wifi) fix: not stored, but a big jump still means we are moving, so switch GPS on */
+            if (last != null && l.distanceTo(last) > Math.max(300f, l.getAccuracy())) { lastMove = now; setGps(true); }
+            else if (last == null) { lastMove = now; setGps(true); }
+            return;
+        }
         boolean moved = last == null || l.distanceTo(last) >= 12f;
         boolean fast = l.hasSpeed() && l.getSpeed() > 1.0f;
         if (moved && last != null && l.distanceTo(last) > 60f || fast) { lastMove = now; setGps(true); }
@@ -134,6 +179,7 @@ public class TrackService extends Service implements LocationListener, SensorEve
         if (last != null && !moved && now - lastWrite < 5 * 60 * 1000L) return;   /* standing still: one point every 5 minutes */
         if (last != null && l.getTime() - last.getTime() < 8000L) return;
         last = l; lastWrite = now;
+        try { getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong("dg_fix", now).putString("dg_prov", String.valueOf(l.getProvider())).putInt("dg_acc", l.hasAccuracy() ? Math.round(l.getAccuracy()) : 0).putBoolean("dg_gps", gpsOn).apply(); } catch (Throwable t) { /* ignore */ }
         boolean roam = false;
         try { TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE); roam = tm != null && tm.isNetworkRoaming(); } catch (Throwable t) { /* unknown */ }
         String line = l.getTime() + "," + l.getLatitude() + "," + l.getLongitude() + "," + (l.hasAccuracy() ? Math.round(l.getAccuracy()) : 0) + "," + (l.hasSpeed() ? String.format(Locale.US, "%.1f", l.getSpeed()) : "0") + "," + (roam ? 1 : 0) + "\n";
@@ -174,6 +220,8 @@ public class TrackService extends Service implements LocationListener, SensorEve
 
     @Override
     public void onDestroy() {
+        try { if (hd != null) hd.removeCallbacks(idle); hd = null; } catch (Throwable t) { /* ignore */ }
+        try { if (sm != null && motion != null) sm.cancelTriggerSensor(trig, motion); } catch (Throwable t) { /* ignore */ }
         try { if (lm != null) lm.removeUpdates(this); } catch (Throwable t) { /* ignore */ }
         try { if (sm != null) sm.unregisterListener(this); } catch (Throwable t) { /* ignore */ }
         super.onDestroy();
