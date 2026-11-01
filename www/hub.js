@@ -12,7 +12,8 @@ window.CLifeInit6 = function (CL) {
   function back(ur, en) { return ur; }
 
   /* ================= LOCATION SEARCH ================= */
-  var PS = { q: '', res: [], busy: false, err: '', mode: 'driving', me: null, kind: '' };
+  var PS = { q: '', res: [], busy: false, err: '', mode: 'driving', me: null, kind: '', km: 5 };
+  var RANGES = [1, 3, 5, 10, 25, 50];
   var KINDS = [['fuel', '⛽', ['پیٹرول', 'Petrol']], ['hospital', '🏥', ['ہسپتال', 'Hospital']], ['atm', '🏧', ['ATM', 'ATM']], ['mosque', '🕌', ['مسجد', 'Mosque']], ['pharmacy', '💊', ['فارمیسی', 'Pharmacy']], ['restaurant', '🍽', ['کھانا', 'Food']], ['bank', '🏦', ['بینک', 'Bank']], ['doctor', '🩺', ['ڈاکٹر', 'Doctor']]];
   var OQ = { fuel: ['amenity=fuel'], hospital: ['amenity=hospital', 'amenity=clinic'], atm: ['amenity=atm'], mosque: ['amenity=place_of_worship][religion=muslim'], pharmacy: ['amenity=pharmacy'], restaurant: ['amenity=restaurant', 'amenity=fast_food', 'amenity=cafe'], bank: ['amenity=bank'], doctor: ['amenity=doctors', 'amenity=clinic'] };
   var KW = [['atm', /\batm\b|cash ?machine|اے ?ٹی ?ایم/i], ['hospital', /hospital|ہسپتال|اسپتال/i], ['pharmacy', /pharmacy|medical store|chemist|میڈیکل|فارمیسی|دوا/i], ['restaurant', /food|restaurant|cafe|hotel|کھانا|ریسٹورنٹ|ہوٹل/i], ['fuel', /petrol|pump|fuel|gas station|پیٹرول|پمپ/i], ['mosque', /mosque|masjid|مسجد/i], ['bank', /\bbank\b|بینک/i], ['doctor', /doctor|clinic|dr\.? |ڈاکٹر|کلینک/i]];
@@ -33,7 +34,7 @@ window.CLifeInit6 = function (CL) {
   }
   var MODES = [['driving', '🚗', ['گاڑی', 'Car']], ['two-wheeler', '🏍', ['بائیک', 'Bike']], ['walking', '🚶', ['پیدل', 'Walk']]];
   function getMe() {
-    var P = CL.TP, ask = (P && P.locRequest) ? P.locRequest().catch(function () {}) : Promise.resolve();
+    var P = CL.TP, ask = (P && P.locRequest) ? Promise.race([P.locRequest().catch(function () {}), new Promise(function (r) { setTimeout(r, 8000); })]) : Promise.resolve();
     return ask.then(getMe2);
   }
   function getMe2() {
@@ -46,10 +47,11 @@ window.CLifeInit6 = function (CL) {
   function dirUrl(lat, lon) { return 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lon + '&travelmode=' + PS.mode; }
   function placeUrl(lat, lon, name) { return 'https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lon; }
   function nominatim(q, me, d) {
-    var bounded = d && d < 1;
+    var bounded = d && d < 10;
     var u = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&accept-language=en&q=' + encodeURIComponent(q);
     if (me && d) { u += '&viewbox=' + (me.lon - d) + ',' + (me.lat + d) + ',' + (me.lon + d) + ',' + (me.lat - d) + (bounded ? '&bounded=1' : ''); }
-    return fetch(u, { headers: { 'Accept': 'application/json' } }).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); });
+    var ac = window.AbortController ? new AbortController() : null, to = setTimeout(function () { if (ac) ac.abort(); }, 14000);
+    return fetch(u, { headers: { 'Accept': 'application/json' }, signal: ac ? ac.signal : undefined }).then(function (r) { clearTimeout(to); if (!r.ok) throw new Error('http ' + r.status); return r.json(); }, function (e) { clearTimeout(to); throw e; });
   }
   function short(n) { var p = String(n || '').split(','); return { name: p[0].trim(), addr: p.slice(1, 4).join(',').trim() }; }
   function vPlaces() {
@@ -65,14 +67,15 @@ window.CLifeInit6 = function (CL) {
     var paint = function () {
       var box = $('#pres'); if (!box) return;
       if (PS.busy) { box.innerHTML = '<div class="card center"><p class="mut">' + tt('تلاش ہو رہی ہے…', 'Searching…') + '</p></div>'; return; }
-      var wb = (PS.q || PS.kind) ? '<button class="sbtn" id="pall" style="width:100%;margin:6px 0">🌍 ' + tt('ہر جگہ تلاش', 'Search everywhere') + '</button>' : '';
-      if (PS.err) { box.innerHTML = '<div class="card center"><p class="mut">' + PS.err + '</p></div>' + wb; if ($('#pall')) $('#pall').onclick = PS.again; return; }
-      box.innerHTML = (PS.note ? '<p class="note" style="margin:8px 2px">📍 ' + esc(PS.note) + '</p>' : '') + PS.res.map(function (r, i) {
+      var wb = (PS.q || PS.kind) ? '<div class="chips" style="margin:8px 0;flex-wrap:wrap"><span class="mut" style="align-self:center">' + tt('رینج:', 'Range:') + '</span>' + RANGES.map(function (r) { return '<button class="chip' + (PS.km === r ? ' on' : '') + '" data-pr="' + r + '">' + r + ' km</button>'; }).join('') + '</div>' : '';
+      var rb = function () { bind('pr', function (r) { PS.km = +r; search(PS.q, PS.kind, false); }); };
+      if (PS.err) { box.innerHTML = wb + '<div class="card center"><p class="mut">' + PS.err + '</p></div>'; rb(); return; }
+      box.innerHTML = wb + (PS.note ? '<p class="note" style="margin:8px 2px">📍 ' + esc(PS.note) + '</p>' : '') + PS.res.map(function (r, i) {
         var d = PS.me ? hav(PS.me.lat, PS.me.lon, r.lat, r.lon) : null, s = short(r.name);
         return '<div class="card"><div class="row" style="padding:0;align-items:flex-start"><span class="dd" style="background:rgba(var(--c4),.18);color:rgb(var(--c4));font-size:18px">📍</span><div class="t" style="flex:1"><b dir="auto">' + esc(s.name) + '</b><small class="e" style="display:block" dir="auto">' + esc(s.addr) + '</small>' + (d !== null ? '<small class="e" style="display:block;direction:ltr;text-align:start">' + d.toFixed(d < 10 ? 1 : 0) + ' km' + (PS.mode === 'driving' ? ' · ~' + Math.max(1, Math.round(d * 1.35 / 35 * 60)) + ' min' : PS.mode === 'walking' ? ' · ~' + Math.round(d * 1.25 / 5 * 60) + ' min' : '') + '</small>' : '') + '</div></div>' +
           '<div class="two" style="margin-top:8px;grid-template-columns:1fr auto auto"><button class="btn" data-prt="' + i + '" style="min-height:42px">' + tt('راستہ ▶', 'Directions ▶') + '</button><button class="sbtn" data-pmp="' + i + '">🗺</button><button class="sbtn" data-psv="' + i + '">⭐</button></div></div>';
-      }).join('') + (PS.res.length ? wb : '');
-      if ($('#pall')) $('#pall').onclick = PS.again;
+      }).join('');
+      rb();
       bind('prt', function (i) { var r = PS.res[+i]; web(dirUrl(r.lat, r.lon), short(r.name).name); });
       bind('pmp', function (i) { var r = PS.res[+i]; web(placeUrl(r.lat, r.lon), short(r.name).name); });
       bind('psv', function (i) { var r = PS.res[+i], f = lget('fav', []); f.push({ n: short(r.name).name, lat: r.lat, lon: r.lon, ic: '⭐' }); lset('fav', f.slice(-20)); CL.toast('محفوظ ہو گیا', 'Saved'); vPlaces(); });
@@ -82,34 +85,24 @@ window.CLifeInit6 = function (CL) {
       if (my !== tok) return; PS.busy = false; PS.note = note || '';
       if (PS.me) list.sort(function (a, b) { return hav(PS.me.lat, PS.me.lon, a.lat, a.lon) - hav(PS.me.lat, PS.me.lon, b.lat, b.lon); });
       PS.res = list.slice(0, 30);
-      if (!PS.res.length) PS.err = tt('قریب میں کچھ نہیں ملا۔ نام بدل کر دیکھیں یا "ہر جگہ تلاش" دبائیں۔', 'Nothing found nearby. Try another word or tap "Search everywhere".'); paint();
+      if (!PS.res.length) PS.err = tt('اس رینج میں کچھ نہیں ملا۔ نیچے سے کلومیٹر بڑھا کر دیکھیں۔', 'Nothing in this range. Increase the km range below.'); paint();
     };
     var fail = function (my, e) { if (my !== tok) return; PS.busy = false; PS.err = tt('تلاش نہیں ہو سکی۔ انٹرنیٹ چیک کریں۔', 'Search failed. Check your internet.') + ' (' + esc(String(e && e.message || e)) + ')'; paint(); };
-    var steps = [3000, 10000, 30000];
     var nearKind = function (kind, my, me) {
-      var loop = function (n) {
-        return overpass(kind, me, steps[n]).then(function (l) {
-          if (l.length >= 3 || n === steps.length - 1) {
-            l.sort(function (a, b) { return (a.unnamed ? 1 : 0) - (b.unnamed ? 1 : 0); });
-            var km = steps[n] / 1000;
-            finish(my, l, n ? tt('قریب میں کم ملا، ' + km + ' کلومیٹر تک دکھا رہے ہیں', 'Few results close by; showing up to ' + km + ' km') : tt('آپ کے آس پاس ' + km + ' کلومیٹر کے اندر', 'Within ' + km + ' km of you'));
-          } else return loop(n + 1);
-        });
-      };
-      return loop(0);
+      return overpass(kind, me, PS.km * 1000).then(function (l) {
+        l.sort(function (a, b) { return (a.unnamed ? 1 : 0) - (b.unnamed ? 1 : 0); });
+        finish(my, l, tt('آپ سے ' + PS.km + ' کلومیٹر کے اندر', 'Within ' + PS.km + ' km of you'));
+      });
     };
     var nearText = function (q, my, me) {
-      var ds = [0.05, 0.25], loop = function (n) {
-        return nominatim(q, me, ds[n]).then(function (a) {
-          var l = (a || []).map(function (x) { return { name: x.display_name, lat: +x.lat, lon: +x.lon }; });
-          if (l.length >= 3 || n === ds.length - 1) finish(my, l, n ? tt('قریب میں کم ملا، دور تک دکھا رہے ہیں', 'Few results close by; showing wider area') : tt('آپ کے آس پاس', 'Near you'));
-          else return loop(n + 1);
-        });
-      };
-      return loop(0);
+      return nominatim(q, me, Math.max(0.01, PS.km / 111)).then(function (a) {
+        var l = (a || []).map(function (x) { return { name: x.display_name, lat: +x.lat, lon: +x.lon }; });
+        if (PS.me) l = l.filter(function (r) { return hav(PS.me.lat, PS.me.lon, r.lat, r.lon) <= PS.km * 1.5; });
+        finish(my, l, tt('آپ سے ' + PS.km + ' کلومیٹر کے اندر', 'Within ' + PS.km + ' km of you'));
+      });
     };
     var search = function (q, kind, everywhere) {
-      if (!q && !kind) return; PS.q = q || ''; PS.busy = true; PS.err = ''; PS.note = ''; PS.res = []; var my = ++tok; paint();
+      if (!q && !kind) return; PS.q = q || ''; PS.busy = true; PS.err = ''; PS.note = ''; PS.res = []; var my = ++tok; paint(); setTimeout(function () { if (my === tok && PS.busy) fail(my, 'timeout'); }, 40000);
       getMe().then(function (me) {
         if (everywhere || !me) {
           if (!me && !everywhere) PS.noloc = true;
@@ -120,7 +113,7 @@ window.CLifeInit6 = function (CL) {
         return nearKind(kind, my, me).catch(function () { return nearText(q || NQ[kind], my, me); });
       }).catch(function (e) { fail(my, e); });
     };
-    PS.again = function () { search(PS.q, PS.kind, true); };
+    
     $('#pgo').onclick = function () { PS.kind = ''; search($('#pq').value.trim(), '', false); };
     $('#pq').onkeydown = function (e) { if (e.key === 'Enter') $('#pgo').onclick(); };
     bind('pk', function (k) { PS.kind = k; $('#pq').value = ''; search('', k, false); [].forEach.call(document.querySelectorAll('[data-pk]'), function (b) { b.classList.toggle('on', b.dataset.pk === k); }); });
