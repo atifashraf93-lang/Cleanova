@@ -13,7 +13,17 @@ window.CLifeInit6 = function (CL) {
 
   /* ================= LOCATION SEARCH ================= */
   var PS = { q: '', res: [], busy: false, err: '', mode: 'driving', me: null, kind: '' };
-  var KINDS = [['fuel', '⛽', ['پیٹرول', 'Petrol']], ['hospital', '🏥', ['ہسپتال', 'Hospital']], ['atm', '🏧', ['ATM', 'ATM']], ['mosque', '🕌', ['مسجد', 'Mosque']], ['pharmacy', '💊', ['فارمیسی', 'Pharmacy']], ['restaurant', '🍽', ['کھانا', 'Food']], ['bank', '🏦', ['بینک', 'Bank']]];
+  var KINDS = [['fuel', '⛽', ['پیٹرول', 'Petrol']], ['hospital', '🏥', ['ہسپتال', 'Hospital']], ['atm', '🏧', ['ATM', 'ATM']], ['mosque', '🕌', ['مسجد', 'Mosque']], ['pharmacy', '💊', ['فارمیسی', 'Pharmacy']], ['restaurant', '🍽', ['کھانا', 'Food']], ['bank', '🏦', ['بینک', 'Bank']], ['doctor', '🩺', ['ڈاکٹر', 'Doctor']]];
+  var OQ = { fuel: ['amenity=fuel'], hospital: ['amenity=hospital', 'amenity=clinic'], atm: ['amenity=atm'], mosque: ['amenity=place_of_worship][religion=muslim'], pharmacy: ['amenity=pharmacy'], restaurant: ['amenity=restaurant', 'amenity=fast_food', 'amenity=cafe'], bank: ['amenity=bank'], doctor: ['amenity=doctors', 'amenity=clinic'] };
+  var KW = [['atm', /\batm\b|cash ?machine|اے ?ٹی ?ایم/i], ['hospital', /hospital|ہسپتال|اسپتال/i], ['pharmacy', /pharmacy|medical store|chemist|میڈیکل|فارمیسی|دوا/i], ['restaurant', /food|restaurant|cafe|hotel|کھانا|ریسٹورنٹ|ہوٹل/i], ['fuel', /petrol|pump|fuel|gas station|پیٹرول|پمپ/i], ['mosque', /mosque|masjid|مسجد/i], ['bank', /\bbank\b|بینک/i], ['doctor', /doctor|clinic|dr\.? |ڈاکٹر|کلینک/i]];
+  var OVER = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  function kindOf(q) { q = String(q || ''); for (var i = 0; i < KW.length; i++) if (KW[i][1].test(q)) return KW[i][0]; return ''; }
+  function overpass(kind, me, R) {
+    var a = 'around:' + R + ',' + me.lat + ',' + me.lon, body = OQ[kind].map(function (t) { return 'nwr(' + a + ')[' + t + '];'; }).join('');
+    var data = 'data=' + encodeURIComponent('[out:json][timeout:20];(' + body + ');out center 60;');
+    var go = function (i) { return fetch(OVER[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: data }).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).catch(function (e) { if (i + 1 < OVER.length) return go(i + 1); throw e; }); };
+    return go(0).then(function (j) { return (j.elements || []).map(function (e) { var t = e.tags || {}, la = e.lat !== undefined ? e.lat : e.center && e.center.lat, lo = e.lon !== undefined ? e.lon : e.center && e.center.lon; if (la === undefined || lo === undefined) return null; var nm = t['name:ur'] || t.name || t['name:en'] || t.brand || t.operator || ''; var ad = [t['addr:street'], t['addr:suburb'] || t['addr:city']].filter(Boolean).join(', '); return { name: (nm || '—') + (ad ? ', ' + ad : (nm && t.operator && t.operator !== nm ? ', ' + t.operator : '')), lat: +la, lon: +lo, unnamed: !nm }; }).filter(Boolean); });
+  }
   var MODES = [['driving', '🚗', ['گاڑی', 'Car']], ['two-wheeler', '🏍', ['بائیک', 'Bike']], ['walking', '🚶', ['پیدل', 'Walk']]];
   function getMe() {
     return new Promise(function (res) {
@@ -24,9 +34,10 @@ window.CLifeInit6 = function (CL) {
   }
   function dirUrl(lat, lon) { return 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lon + '&travelmode=' + PS.mode; }
   function placeUrl(lat, lon, name) { return 'https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lon; }
-  function nominatim(q, me, bounded) {
+  function nominatim(q, me, d) {
+    var bounded = d && d < 1;
     var u = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&accept-language=en&q=' + encodeURIComponent(q);
-    if (me) { var d = bounded ? 0.12 : 1.5; u += '&viewbox=' + (me.lon - d) + ',' + (me.lat + d) + ',' + (me.lon + d) + ',' + (me.lat - d) + (bounded ? '&bounded=1' : ''); }
+    if (me && d) { u += '&viewbox=' + (me.lon - d) + ',' + (me.lat + d) + ',' + (me.lon + d) + ',' + (me.lat - d) + (bounded ? '&bounded=1' : ''); }
     return fetch(u, { headers: { 'Accept': 'application/json' } }).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); });
   }
   function short(n) { var p = String(n || '').split(','); return { name: p[0].trim(), addr: p.slice(1, 4).join(',').trim() }; }
@@ -38,32 +49,69 @@ window.CLifeInit6 = function (CL) {
       '<span class="fl">' + tt('سفر کا طریقہ', 'Travel by') + '</span>' + chips(MODES.map(function (m) { return [m[0], [m[1] + ' ' + m[2][0], m[1] + ' ' + m[2][1]]]; }), PS.mode, 'pm') + '</div>';
     if (fav.length) h += '<div class="sec">' + tt('محفوظ جگہیں', 'SAVED PLACES') + '</div>' + fav.map(function (f, i) { return '<div class="card"><div class="row" style="padding:0"><span class="dd" style="background:rgba(var(--c2),.18);color:rgb(var(--c2));font-size:18px">' + (f.ic || '⭐') + '</span><div class="t" style="flex:1"><b dir="auto">' + esc(f.n) + '</b></div><button class="sbtn" data-pgf="' + i + '">' + tt('جاؤ', 'Go') + '</button><button class="sbtn" data-pdf="' + i + '" style="min-height:36px;padding:0 10px">✕</button></div></div>'; }).join('');
     h += '<div id="pres"></div>' +
-      '<p class="note">' + tt('تلاش OpenStreetMap سے ہوتی ہے (انٹرنیٹ چاہیے)، اور راستہ Google Maps میں کلینووا کی اپنی ونڈو میں کھلتا ہے۔ آپ کا مقام اپنے فون سے ہی لیا جاتا ہے اور کہیں محفوظ نہیں ہوتا سوائے آخری مقام کے جو قبلہ کے لیے رکھا جاتا ہے۔', 'Search uses OpenStreetMap (needs internet); the route opens in Google Maps inside Cleanova. Your location is read on the phone; only the last one is kept (used for Qibla).') + '</p>' + CL.footer();
+      '<p class="note">' + tt('تلاش OpenStreetMap (Nominatim اور Overpass) سے ہوتی ہے (انٹرنیٹ چاہیے)، اور راستہ Google Maps میں کلینووا کی اپنی ونڈو میں کھلتا ہے۔ آپ کا مقام اپنے فون سے ہی لیا جاتا ہے اور کہیں محفوظ نہیں ہوتا سوائے آخری مقام کے جو قبلہ کے لیے رکھا جاتا ہے۔', 'Search uses OpenStreetMap (needs internet); the route opens in Google Maps inside Cleanova. Your location is read on the phone; only the last one is kept (used for Qibla).') + '</p>' + CL.footer();
     $('#body').innerHTML = h;
     var paint = function () {
       var box = $('#pres'); if (!box) return;
       if (PS.busy) { box.innerHTML = '<div class="card center"><p class="mut">' + tt('تلاش ہو رہی ہے…', 'Searching…') + '</p></div>'; return; }
-      if (PS.err) { box.innerHTML = '<div class="card center"><p class="mut">' + PS.err + '</p></div>'; return; }
-      box.innerHTML = PS.res.map(function (r, i) {
+      var wb = (PS.q || PS.kind) ? '<button class="sbtn" id="pall" style="width:100%;margin:6px 0">🌍 ' + tt('ہر جگہ تلاش', 'Search everywhere') + '</button>' : '';
+      if (PS.err) { box.innerHTML = '<div class="card center"><p class="mut">' + PS.err + '</p></div>' + wb; if ($('#pall')) $('#pall').onclick = PS.again; return; }
+      box.innerHTML = (PS.note ? '<p class="note" style="margin:8px 2px">📍 ' + esc(PS.note) + '</p>' : '') + PS.res.map(function (r, i) {
         var d = PS.me ? hav(PS.me.lat, PS.me.lon, r.lat, r.lon) : null, s = short(r.name);
         return '<div class="card"><div class="row" style="padding:0;align-items:flex-start"><span class="dd" style="background:rgba(var(--c4),.18);color:rgb(var(--c4));font-size:18px">📍</span><div class="t" style="flex:1"><b dir="auto">' + esc(s.name) + '</b><small class="e" style="display:block" dir="auto">' + esc(s.addr) + '</small>' + (d !== null ? '<small class="e" style="display:block;direction:ltr;text-align:start">' + d.toFixed(d < 10 ? 1 : 0) + ' km' + (PS.mode === 'driving' ? ' · ~' + Math.max(1, Math.round(d * 1.35 / 35 * 60)) + ' min' : PS.mode === 'walking' ? ' · ~' + Math.round(d * 1.25 / 5 * 60) + ' min' : '') + '</small>' : '') + '</div></div>' +
           '<div class="two" style="margin-top:8px;grid-template-columns:1fr auto auto"><button class="btn" data-prt="' + i + '" style="min-height:42px">' + tt('راستہ ▶', 'Directions ▶') + '</button><button class="sbtn" data-pmp="' + i + '">🗺</button><button class="sbtn" data-psv="' + i + '">⭐</button></div></div>';
-      }).join('');
+      }).join('') + (PS.res.length ? wb : '');
+      if ($('#pall')) $('#pall').onclick = PS.again;
       bind('prt', function (i) { var r = PS.res[+i]; web(dirUrl(r.lat, r.lon), short(r.name).name); });
       bind('pmp', function (i) { var r = PS.res[+i]; web(placeUrl(r.lat, r.lon), short(r.name).name); });
       bind('psv', function (i) { var r = PS.res[+i], f = lget('fav', []); f.push({ n: short(r.name).name, lat: r.lat, lon: r.lon, ic: '⭐' }); lset('fav', f.slice(-20)); CL.toast('محفوظ ہو گیا', 'Saved'); vPlaces(); });
     };
-    var search = function (q, bounded) {
-      if (!q) return; PS.q = q; PS.busy = true; PS.err = ''; paint();
-      getMe().then(function (me) { return nominatim(q, me, bounded && me); }).then(function (a) {
-        PS.busy = false; PS.res = (a || []).map(function (x) { return { name: x.display_name, lat: +x.lat, lon: +x.lon }; });
-        if (PS.me) PS.res.sort(function (a, b) { return hav(PS.me.lat, PS.me.lon, a.lat, a.lon) - hav(PS.me.lat, PS.me.lon, b.lat, b.lon); });
-        if (!PS.res.length) PS.err = tt('کچھ نہیں ملا۔ نام بدل کر یا شہر کا نام ساتھ لکھ کر دیکھیں۔', 'Nothing found. Try another name, or add the city.'); paint();
-      }).catch(function () { PS.busy = false; PS.err = tt('تلاش نہیں ہو سکی۔ انٹرنیٹ چیک کریں۔', 'Search failed. Check your internet.'); paint(); });
+    var tok = 0;
+    var finish = function (my, list, note) {
+      if (my !== tok) return; PS.busy = false; PS.note = note || '';
+      if (PS.me) list.sort(function (a, b) { return hav(PS.me.lat, PS.me.lon, a.lat, a.lon) - hav(PS.me.lat, PS.me.lon, b.lat, b.lon); });
+      PS.res = list.slice(0, 30);
+      if (!PS.res.length) PS.err = tt('قریب میں کچھ نہیں ملا۔ نام بدل کر دیکھیں یا "ہر جگہ تلاش" دبائیں۔', 'Nothing found nearby. Try another word or tap "Search everywhere".'); paint();
     };
-    $('#pgo').onclick = function () { PS.kind = ''; search($('#pq').value.trim(), false); };
+    var fail = function (my) { if (my !== tok) return; PS.busy = false; PS.err = tt('تلاش نہیں ہو سکی۔ انٹرنیٹ چیک کریں۔', 'Search failed. Check your internet.'); paint(); };
+    var steps = [3000, 10000, 30000];
+    var nearKind = function (kind, my, me) {
+      var loop = function (n) {
+        return overpass(kind, me, steps[n]).then(function (l) {
+          if (l.length >= 3 || n === steps.length - 1) {
+            l.sort(function (a, b) { return (a.unnamed ? 1 : 0) - (b.unnamed ? 1 : 0); });
+            var km = steps[n] / 1000;
+            finish(my, l, n ? tt('قریب میں کم ملا، ' + km + ' کلومیٹر تک دکھا رہے ہیں', 'Few results close by; showing up to ' + km + ' km') : tt('آپ کے آس پاس ' + km + ' کلومیٹر کے اندر', 'Within ' + km + ' km of you'));
+          } else return loop(n + 1);
+        });
+      };
+      return loop(0);
+    };
+    var nearText = function (q, my, me) {
+      var ds = [0.05, 0.25], loop = function (n) {
+        return nominatim(q, me, ds[n]).then(function (a) {
+          var l = (a || []).map(function (x) { return { name: x.display_name, lat: +x.lat, lon: +x.lon }; });
+          if (l.length >= 3 || n === ds.length - 1) finish(my, l, n ? tt('قریب میں کم ملا، دور تک دکھا رہے ہیں', 'Few results close by; showing wider area') : tt('آپ کے آس پاس', 'Near you'));
+          else return loop(n + 1);
+        });
+      };
+      return loop(0);
+    };
+    var search = function (q, kind, everywhere) {
+      if (!q && !kind) return; PS.q = q || ''; PS.busy = true; PS.err = ''; PS.note = ''; PS.res = []; var my = ++tok; paint();
+      getMe().then(function (me) {
+        if (everywhere || !me) {
+          if (!me && !everywhere) PS.noloc = true;
+          return nominatim(q || kind, me, 0).then(function (a) { finish(my, (a || []).map(function (x) { return { name: x.display_name, lat: +x.lat, lon: +x.lon }; }), me ? '' : tt('لوکیشن نہیں ملی (اجازت آن کریں) — عام تلاش', 'No location (allow access) — general search')); });
+        }
+        kind = kind || kindOf(q);
+        return kind ? nearKind(kind, my, me) : nearText(q, my, me);
+      }).catch(function () { fail(my); });
+    };
+    PS.again = function () { search(PS.q, PS.kind, true); };
+    $('#pgo').onclick = function () { PS.kind = ''; search($('#pq').value.trim(), '', false); };
     $('#pq').onkeydown = function (e) { if (e.key === 'Enter') $('#pgo').onclick(); };
-    bind('pk', function (k) { PS.kind = k; getMe().then(function (me) { if (!me) { PS.err = tt('مقام نہیں ملا۔ لوکیشن کی اجازت دیں۔', 'No location. Allow location access.'); paint(); return; } search(k, true); }); [].forEach.call(document.querySelectorAll('[data-pk]'), function (b) { b.classList.toggle('on', b.dataset.pk === k); }); });
+    bind('pk', function (k) { PS.kind = k; $('#pq').value = ''; search('', k, false); [].forEach.call(document.querySelectorAll('[data-pk]'), function (b) { b.classList.toggle('on', b.dataset.pk === k); }); });
     bind('pm', function (m) { PS.mode = m; [].forEach.call(document.querySelectorAll('[data-pm]'), function (b) { b.classList.toggle('on', b.dataset.pm === m); }); });
     bind('pgf', function (i) { var f = lget('fav', [])[+i]; if (f) web(dirUrl(f.lat, f.lon), f.n); });
     bind('pdf', function (i) { var f = lget('fav', []); f.splice(+i, 1); lset('fav', f); vPlaces(); });
