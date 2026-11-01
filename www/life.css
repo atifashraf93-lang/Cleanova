@@ -135,3 +135,17 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .qc.ok{border-color:#34d399;box-shadow:0 0 24px rgba(52,211,153,.5)}
 .qc i{position:absolute;left:50%;top:50%;width:6px;height:96px;margin-left:-3px;background:linear-gradient(var(--acc),transparent);border-radius:3px;transform-origin:50% 100%;transform:translate(-50%,-100%);transition:transform .15s}
 .qc .qk{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:34px}
+
+/* tool catalog, discovery, status maker, travel */
+.mt{position:relative}
+.nwb{position:absolute;top:-6px;inset-inline-start:-3px;background:linear-gradient(90deg,#ff7a45,#ffb24a);color:#201000;font-size:10px;font-weight:800;border-radius:9px;padding:0 7px;line-height:1.7;z-index:2}
+.srch{display:block;width:100%;text-align:start;margin-top:12px;min-height:46px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:var(--mut);padding:6px 14px;font:inherit}
+.otd{background:linear-gradient(120deg,#1b3b6e,#16505a);border:1px solid rgba(96,165,250,.35);color:#fff}
+.otd .sbtn{color:#fff}.otd .sbtn.p{color:var(--accfg)}
+.uchk2{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:14px;line-height:1.7}
+.uchk2 input{width:20px;height:20px;accent-color:var(--acc);flex:none}
+.sw{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.swb{width:38px;height:38px;border-radius:12px;border:2px solid transparent}
+.swb.on{border-color:#fff;box-shadow:0 0 0 2px var(--acc)}
+.grab{width:46px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 10px}
+.two>div{min-width:0}.two input[type=date],.two input[type=time]{min-width:0;width:100%}
