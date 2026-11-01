@@ -16,20 +16,31 @@ window.CLifeInit6 = function (CL) {
   var KINDS = [['fuel', '⛽', ['پیٹرول', 'Petrol']], ['hospital', '🏥', ['ہسپتال', 'Hospital']], ['atm', '🏧', ['ATM', 'ATM']], ['mosque', '🕌', ['مسجد', 'Mosque']], ['pharmacy', '💊', ['فارمیسی', 'Pharmacy']], ['restaurant', '🍽', ['کھانا', 'Food']], ['bank', '🏦', ['بینک', 'Bank']], ['doctor', '🩺', ['ڈاکٹر', 'Doctor']]];
   var OQ = { fuel: ['amenity=fuel'], hospital: ['amenity=hospital', 'amenity=clinic'], atm: ['amenity=atm'], mosque: ['amenity=place_of_worship][religion=muslim'], pharmacy: ['amenity=pharmacy'], restaurant: ['amenity=restaurant', 'amenity=fast_food', 'amenity=cafe'], bank: ['amenity=bank'], doctor: ['amenity=doctors', 'amenity=clinic'] };
   var KW = [['atm', /\batm\b|cash ?machine|اے ?ٹی ?ایم/i], ['hospital', /hospital|ہسپتال|اسپتال/i], ['pharmacy', /pharmacy|medical store|chemist|میڈیکل|فارمیسی|دوا/i], ['restaurant', /food|restaurant|cafe|hotel|کھانا|ریسٹورنٹ|ہوٹل/i], ['fuel', /petrol|pump|fuel|gas station|پیٹرول|پمپ/i], ['mosque', /mosque|masjid|مسجد/i], ['bank', /\bbank\b|بینک/i], ['doctor', /doctor|clinic|dr\.? |ڈاکٹر|کلینک/i]];
-  var OVER = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  var NQ = { fuel: 'petrol pump', hospital: 'hospital', atm: 'ATM', mosque: 'mosque', pharmacy: 'pharmacy', restaurant: 'restaurant', bank: 'bank', doctor: 'clinic' };
+  var OVER = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
   function kindOf(q) { q = String(q || ''); for (var i = 0; i < KW.length; i++) if (KW[i][1].test(q)) return KW[i][0]; return ''; }
   function overpass(kind, me, R) {
     var a = 'around:' + R + ',' + me.lat + ',' + me.lon, body = OQ[kind].map(function (t) { return 'nwr(' + a + ')[' + t + '];'; }).join('');
     var data = 'data=' + encodeURIComponent('[out:json][timeout:20];(' + body + ');out center 60;');
-    var go = function (i) { return fetch(OVER[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: data }).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).catch(function (e) { if (i + 1 < OVER.length) return go(i + 1); throw e; }); };
-    return go(0).then(function (j) { return (j.elements || []).map(function (e) { var t = e.tags || {}, la = e.lat !== undefined ? e.lat : e.center && e.center.lat, lo = e.lon !== undefined ? e.lon : e.center && e.center.lon; if (la === undefined || lo === undefined) return null; var nm = t['name:ur'] || t.name || t['name:en'] || t.brand || t.operator || ''; var ad = [t['addr:street'], t['addr:suburb'] || t['addr:city']].filter(Boolean).join(', '); return { name: (nm || '—') + (ad ? ', ' + ad : (nm && t.operator && t.operator !== nm ? ', ' + t.operator : '')), lat: +la, lon: +lo, unnamed: !nm }; }).filter(Boolean); });
+    var one = function (url) { return new Promise(function (ok, no) {
+      var ac = window.AbortController ? new AbortController() : null, to = setTimeout(function () { if (ac) ac.abort(); no(new Error('timeout')); }, 14000);
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: data, signal: ac ? ac.signal : undefined })
+        .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+        .then(function (j) { clearTimeout(to); ok(j); }, function (e) { clearTimeout(to); no(e); });
+    }); };
+    var go = function () { return new Promise(function (ok, no) { var left = OVER.length, last; OVER.forEach(function (u) { one(u).then(ok, function (e) { last = e; if (--left === 0) no(last); }); }); }); };
+    return go().then(function (j) { return (j.elements || []).map(function (e) { var t = e.tags || {}, la = e.lat !== undefined ? e.lat : e.center && e.center.lat, lo = e.lon !== undefined ? e.lon : e.center && e.center.lon; if (la === undefined || lo === undefined) return null; var nm = t['name:ur'] || t.name || t['name:en'] || t.brand || t.operator || ''; var ad = [t['addr:street'], t['addr:suburb'] || t['addr:city']].filter(Boolean).join(', '); return { name: (nm || '—') + (ad ? ', ' + ad : (nm && t.operator && t.operator !== nm ? ', ' + t.operator : '')), lat: +la, lon: +lo, unnamed: !nm }; }).filter(Boolean); });
   }
   var MODES = [['driving', '🚗', ['گاڑی', 'Car']], ['two-wheeler', '🏍', ['بائیک', 'Bike']], ['walking', '🚶', ['پیدل', 'Walk']]];
   function getMe() {
+    var P = CL.TP, ask = (P && P.locRequest) ? P.locRequest().catch(function () {}) : Promise.resolve();
+    return ask.then(getMe2);
+  }
+  function getMe2() {
     return new Promise(function (res) {
       var saved = lget('qloc', null), done = false, fin = function (m) { if (!done) { done = true; PS.me = m; res(m); } };
-      try { navigator.geolocation.getCurrentPosition(function (p) { var m = { lat: p.coords.latitude, lon: p.coords.longitude, real: true }; lset('qloc', [m.lat, m.lon]); fin(m); }, function () { fin(saved ? { lat: saved[0], lon: saved[1], real: false } : null); }, { timeout: 6000, maximumAge: 300000 }); } catch (e) { fin(saved ? { lat: saved[0], lon: saved[1], real: false } : null); }
-      setTimeout(function () { fin(saved ? { lat: saved[0], lon: saved[1], real: false } : null); }, 7000);
+      try { navigator.geolocation.getCurrentPosition(function (p) { var m = { lat: p.coords.latitude, lon: p.coords.longitude, real: true }; lset('qloc', [m.lat, m.lon]); fin(m); }, function () { fin(saved ? { lat: saved[0], lon: saved[1], real: false } : null); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }); } catch (e) { fin(saved ? { lat: saved[0], lon: saved[1], real: false } : null); }
+      setTimeout(function () { fin(saved ? { lat: saved[0], lon: saved[1], real: false } : null); }, 11000);
     });
   }
   function dirUrl(lat, lon) { return 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lon + '&travelmode=' + PS.mode; }
@@ -73,7 +84,7 @@ window.CLifeInit6 = function (CL) {
       PS.res = list.slice(0, 30);
       if (!PS.res.length) PS.err = tt('قریب میں کچھ نہیں ملا۔ نام بدل کر دیکھیں یا "ہر جگہ تلاش" دبائیں۔', 'Nothing found nearby. Try another word or tap "Search everywhere".'); paint();
     };
-    var fail = function (my) { if (my !== tok) return; PS.busy = false; PS.err = tt('تلاش نہیں ہو سکی۔ انٹرنیٹ چیک کریں۔', 'Search failed. Check your internet.'); paint(); };
+    var fail = function (my, e) { if (my !== tok) return; PS.busy = false; PS.err = tt('تلاش نہیں ہو سکی۔ انٹرنیٹ چیک کریں۔', 'Search failed. Check your internet.') + ' (' + esc(String(e && e.message || e)) + ')'; paint(); };
     var steps = [3000, 10000, 30000];
     var nearKind = function (kind, my, me) {
       var loop = function (n) {
@@ -102,11 +113,12 @@ window.CLifeInit6 = function (CL) {
       getMe().then(function (me) {
         if (everywhere || !me) {
           if (!me && !everywhere) PS.noloc = true;
-          return nominatim(q || kind, me, 0).then(function (a) { finish(my, (a || []).map(function (x) { return { name: x.display_name, lat: +x.lat, lon: +x.lon }; }), me ? '' : tt('لوکیشن نہیں ملی (اجازت آن کریں) — عام تلاش', 'No location (allow access) — general search')); });
+          return nominatim(q || kind, me, 0).then(function (a) { finish(my, (a || []).map(function (x) { return { name: x.display_name, lat: +x.lat, lon: +x.lon }; }), me ? '' : tt('⚠️ آپ کی لوکیشن نہیں ملی۔ فون میں لوکیشن آن کریں اور کلینووا کو اجازت دیں، ورنہ نتائج قریب کے نہیں ہوں گے۔', 'Your location was not found. Turn on location and allow Cleanova, otherwise results will not be nearby.')); });
         }
         kind = kind || kindOf(q);
-        return kind ? nearKind(kind, my, me) : nearText(q, my, me);
-      }).catch(function () { fail(my); });
+        if (!kind) return nearText(q, my, me);
+        return nearKind(kind, my, me).catch(function () { return nearText(q || NQ[kind], my, me); });
+      }).catch(function (e) { fail(my, e); });
     };
     PS.again = function () { search(PS.q, PS.kind, true); };
     $('#pgo').onclick = function () { PS.kind = ''; search($('#pq').value.trim(), '', false); };
