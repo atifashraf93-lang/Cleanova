@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ur" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Cleanova Family</title>
+<style>
+:root{--bg:#0b1220;--card:#131c2e;--line:#22304a;--tx:#e8eef9;--mut:#8fa0bd;--acc:#2dd4bf;--red:#f43f5e;--amb:#f59e0b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.7 system-ui,"Noto Nastaliq Urdu","Noto Naskh Arabic",sans-serif;padding:max(14px,env(safe-area-inset-top)) 16px 40px}
+h1{font-size:22px;margin:6px 0 2px}.sub{color:var(--mut);font-size:13px;margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:10px 0}
+.inp{width:100%;min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:inherit;padding:8px 12px}
+.btn{width:100%;min-height:50px;border-radius:14px;border:0;background:var(--acc);color:#052;font:inherit;font-weight:700;margin-top:10px}
+.btn.g{background:transparent;border:1px solid var(--line);color:var(--tx)}.btn.r{background:var(--red);color:#fff}
+.row{display:flex;align-items:center;gap:10px;margin:8px 0}.row>span{flex:1}
+.pill{padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}.ok{background:rgba(45,212,191,.15);color:var(--acc)}.no{background:rgba(245,158,11,.15);color:var(--amb)}
+.note{color:var(--mut);font-size:13px}.seg{display:flex;gap:8px}.seg label{flex:1;border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.seg input{display:none}.seg input:checked+span{color:var(--acc);font-weight:700}.seg label:has(input:checked){border-color:var(--acc)}
+.sos{width:100%;min-height:64px;border-radius:18px;border:0;background:var(--red);color:#fff;font:inherit;font-size:20px;font-weight:800;margin-top:6px}
+.sw{position:relative;width:50px;height:30px;flex:none}.sw input{opacity:0;position:absolute;inset:0;width:100%;height:100%;margin:0}.sw i{position:absolute;inset:0;border-radius:99px;background:#334155;transition:.2s}.sw i:after{content:"";position:absolute;top:3px;inset-inline-start:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.2s}.sw input:checked+i{background:var(--acc)}.sw input:checked+i:after{inset-inline-start:23px}
+#toast{position:fixed;bottom:24px;inset-inline:16px;background:#1e293b;border:1px solid var(--line);border-radius:14px;padding:12px;text-align:center;display:none;z-index:9}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:8}#modal>div{background:var(--card);width:100%;border-radius:22px 22px 0 0;padding:18px 16px 26px}
+</style>
+</head>
+<body>
+<div id="app"></div><div id="toast"></div><div id="modal"><div id="sheet"></div></div>
+<script>
+(function () {
+  'use strict';
+  var F = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Family) || window.FamilyMock;
+  var $ = function (s) { return document.querySelector(s); }, S = null, poll = 0;
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function hash(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return String(h); }
+  function toast(m) { var t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function () { t.style.display = 'none'; }, 3200); }
+  function sheet(h) { $('#sheet').innerHTML = h; $('#modal').style.display = 'flex'; }
+  function close() { $('#modal').style.display = 'none'; }
+  function pinGate(cb) {
+    if (S.role !== 'child' || !S.pin) { cb(); return; }
+    sheet('<b>🔒 والدین کا PIN</b><input class="inp" id="gp" type="password" inputmode="numeric" maxlength="6" style="margin-top:10px;text-align:center;letter-spacing:6px;direction:ltr"><button class="btn" id="go">کھولیں</button><button class="btn g" id="gx">منسوخ</button>');
+    $('#gx').onclick = close; $('#go').onclick = function () { if (hash($('#gp').value) === S.pin) { close(); cb(); } else toast('PIN درست نہیں'); };
+  }
+  function ago(t) { if (!t) return 'ابھی نہیں'; var m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'ابھی' : m < 60 ? m + ' منٹ پہلے' : Math.round(m / 60) + ' گھنٹے پہلے'; }
+  function load() { return F.state().then(function (s) { S = s; return s; }); }
+  function render() { clearInterval(poll); poll = 0; if (!S.code) return join(); if (!S.ok) return wait(); main(); }
+
+  function join() {
+    $('#app').innerHTML = '<h1>👨‍👩‍👧 Cleanova Family</h1><p class="sub">اپنے خاندان کے ساتھ لوکیشن اور اسکرین ٹائم شیئر کریں — صرف آپ کی رضامندی سے</p>' +
+      '<div class="card"><input class="inp" id="n" placeholder="آپ کا نام"><div class="seg" style="margin-top:10px"><label><input type="radio" name="r" value="adult" checked><span>بالغ</span></label><label><input type="radio" name="r" value="child"><span>بچہ</span></label></div>' +
+      '<input class="inp" id="c" placeholder="سرکل کا کوڈ (Cleanova Life سے)" style="margin-top:10px;direction:ltr;text-align:center;letter-spacing:3px;text-transform:uppercase" maxlength="10">' +
+      '<div id="pw" style="display:none"><input class="inp" id="p" type="password" inputmode="numeric" maxlength="6" placeholder="والدین کا PIN (4 سے 6 ہندسے)" style="margin-top:10px;direction:ltr;text-align:center"><p class="note">یہ PIN والدین سیٹ کریں۔ اس کے بغیر بچہ شیئرنگ بند یا سرکل نہیں چھوڑ سکتا۔</p></div></div>' +
+      '<div class="card"><b>کیا شیئر ہوگا</b><ul class="note" style="margin:6px 0;padding-inline-start:20px;line-height:1.9"><li>آپ کی لوکیشن اور بیٹری</li><li>بچے کے فون پر ایپس میں گزارا وقت</li><li>SOS دبانے پر آپ کی جگہ</li></ul><b>کیا شیئر نہیں ہوگا</b><ul class="note" style="margin:6px 0;padding-inline-start:20px;line-height:1.9"><li>پیغامات، کالز، تصویریں، براؤزنگ</li></ul><p class="note">شیئرنگ کے دوران فون میں ایک نوٹیفکیشن ہمیشہ نظر آئے گا اور سرکل کے منتظم کی منظوری ضروری ہے۔</p>' +
+      '<label class="row"><input type="checkbox" id="k"> <span>مجھے معلوم ہے اور میں رضامند ہوں (بچے کے لیے: والدین نے بچے کو بتا دیا ہے)</span></label></div><button class="btn" id="go">سرکل میں شامل ہوں</button>';
+    [].forEach.call(document.querySelectorAll('[name=r]'), function (r) { r.onchange = function () { $('#pw').style.display = document.querySelector('[name=r]:checked').value === 'child' ? 'block' : 'none'; }; });
+    $('#go').onclick = function () {
+      var n = $('#n').value.trim(), c = $('#c').value.trim().toUpperCase(), r = document.querySelector('[name=r]:checked').value, p = $('#p').value.trim();
+      if (!n) return toast('نام لکھیں'); if (c.length < 6) return toast('کوڈ لکھیں'); if (r === 'child' && !/^\d{4,6}$/.test(p)) return toast('PIN 4 سے 6 ہندسے'); if (!$('#k').checked) return toast('رضامندی کا نشان لگائیں');
+      $('#go').disabled = true; $('#go').textContent = '…';
+      F.join({ code: c, name: n, role: r, pin: r === 'child' ? hash(p) : '' }).then(function (s) { S = s; render(); }).catch(function (e) { $('#go').disabled = false; $('#go').textContent = 'سرکل میں شامل ہوں'; toast(/not found/.test(e.message || e) ? 'یہ کوڈ نہیں ملا' : 'انٹرنیٹ یا کوڈ کا مسئلہ'); });
+    };
+  }
+  function wait() {
+    $('#app').innerHTML = '<h1>⏳ منظوری کا انتظار</h1><div class="card"><p>سرکل <b dir="ltr">' + esc(S.code) + '</b> میں آپ کی درخواست بھیج دی گئی ہے۔</p><p class="note">سرکل کے منتظم (والدین) کو Cleanova Life کھول کر "Family" میں آپ کا نام منظور کرنا ہوگا۔ منظوری ملتے ہی یہاں خود کھل جائے گا۔</p></div><button class="btn g" id="rf">دوبارہ دیکھیں</button><button class="btn g" id="lv">درخواست واپس لیں</button>';
+    var chk = function () { F.refresh().then(function (s) { S = s; if (S.ok) render(); }).catch(function () { /* offline */ }); };
+    $('#rf').onclick = chk; poll = setInterval(chk, 8000);
+    $('#lv').onclick = function () { pinGate(function () { F.leave().then(function (s) { S = s; render(); }); }); };
+  }
+  function perm(label, ok, key, fn, why) { return '<div class="row"><span>' + label + (why ? '<br><small class="note">' + why + '</small>' : '') + '</span>' + (ok ? '<b class="pill ok">✓</b>' : '<button class="pill no" data-p="' + key + '" style="border:0">اجازت دیں</button>') + '</div>'; }
+  function main() {
+    var allOk = S.pLoc && S.pBg && S.pNotif && (S.role !== 'child' || !S.usage || S.pUsage);
+    $('#app').innerHTML = '<h1>👨‍👩‍👧 Cleanova Family</h1><p class="sub">' + esc(S.name) + ' · سرکل <b dir="ltr">' + esc(S.code) + '</b></p>' +
+      '<div class="card"><div class="row"><span><b>' + (S.on ? '🟢 شیئرنگ چل رہی ہے' : '⚪ شیئرنگ بند ہے') + '</b><br><small class="note">آخری بار بھیجا: ' + ago(S.sent) + '</small></span></div>' + (S.err ? '<p class="note" style="color:var(--amb)">' + esc(S.err).slice(0, 120) + '</p>' : '') + '<button class="btn' + (S.on ? ' g' : '') + '" id="tg">' + (S.on ? 'شیئرنگ بند کریں' : 'شیئرنگ شروع کریں') + '</button></div>' +
+      '<button class="sos" id="sos">🆘 SOS — فوری مدد</button><p class="note" style="text-align:center;margin:4px 0 0">دبانے پر پورے سرکل کو آپ کی جگہ کے ساتھ اطلاع جاتی ہے</p>' +
+      '<div class="card"><b>کیا شیئر ہو رہا ہے</b><div class="row"><span>📍 لوکیشن اور بیٹری</span><label class="sw"><input type="checkbox" id="sl"' + (S.loc ? ' checked' : '') + '><i></i></label></div><div class="row"><span>⏱ اسکرین ٹائم (ایپس میں وقت)</span><label class="sw"><input type="checkbox" id="su"' + (S.usage ? ' checked' : '') + '><i></i></label></div><p class="note">پیغامات، تصویریں اور براؤزنگ کبھی نہیں پڑھے جاتے۔' + (S.role === 'child' ? ' بدلنے کے لیے والدین کا PIN چاہیے۔' : '') + '</p></div>' +
+      '<div class="card"><b>اجازتیں' + (allOk ? ' ✓' : '') + '</b>' + perm('لوکیشن', S.pLoc, 'loc') + perm('ہر وقت لوکیشن', S.pBg, 'bg', 0, 'کھلنے والی سیٹنگ میں "Allow all the time" چنیں') + perm('نوٹیفکیشن', S.pNotif, 'notif') + perm('استعمال تک رسائی (اسکرین ٹائم)', S.pUsage, 'usage', 0, 'سیٹنگ میں Cleanova Family آن کریں') + perm('بیٹری: بغیر پابندی', S.pBatt, 'batt', 0, 'تاکہ فون سونے پر بھی رپورٹ جاتی رہے') + '</div>' +
+      '<button class="btn g" id="lv">سرکل چھوڑیں</button><p class="note" style="text-align:center">Developed by SMAA</p>';
+    [].forEach.call(document.querySelectorAll('[data-p]'), function (b) { b.onclick = function () { var k = b.dataset.p; (k === 'loc' ? F.locRequest() : k === 'bg' ? F.locRequest().then(function () { return F.bgRequest(); }) : k === 'notif' ? F.notifRequest() : k === 'usage' ? F.usageRequest() : F.battRequest()).then(function (s) { S = s; main(); }).catch(function () { toast('اجازت نہیں ملی'); }); }; });
+    $('#tg').onclick = function () {
+      if (S.on) return pinGate(function () { F.stop({}).then(function (s) { S = s; main(); toast('شیئرنگ بند — سرکل کو اطلاع چلی گئی'); }); });
+      if (!S.pLoc) { toast('پہلے لوکیشن کی اجازت دیں'); return; }
+      F.start().then(function (s) { S = s; main(); }).catch(function () { toast('شروع نہیں ہو سکا'); });
+    };
+    var sh = function (k, el) { pinGate(function () { var o = {}; o[k] = el.checked; F.setShare(o).then(function (s) { S = s; main(); }); }); };
+    $('#sl').onchange = function () { var el = this; if (S.role === 'child') { el.checked = !el.checked; sh('loc', { checked: !el.checked }); } else sh('loc', el); };
+    $('#su').onchange = function () { var el = this; if (S.role === 'child') { el.checked = !el.checked; sh('usage', { checked: !el.checked }); } else sh('usage', el); };
+    $('#sos').onclick = function () { sheet('<b>🆘 SOS بھیجیں؟</b><p class="note">پورے سرکل کو آپ کی جگہ کے ساتھ فوری اطلاع جائے گی۔ جان کو خطرہ ہو تو 15 پر کال کریں۔</p><button class="btn r" id="sy">ہاں، بھیجیں</button><button class="btn g" id="sn">نہیں</button>'); $('#sn').onclick = close; $('#sy').onclick = function () { close(); F.sos().then(function () { toast('SOS بھیج دیا گیا'); }); }; };
+    $('#lv').onclick = function () { pinGate(function () { sheet('<b>سرکل چھوڑیں؟</b><p class="note">آپ کی جگہ اور ڈیٹا سرکل سے ہٹ جائے گا۔</p><button class="btn r" id="ly">چھوڑیں</button><button class="btn g" id="ln">نہیں</button>'); $('#ln').onclick = close; $('#ly').onclick = function () { close(); F.leave().then(function (s) { S = s; render(); }); }; }); };
+    if (S.on) poll = setInterval(function () { load().then(function () { if (!S.ok) render(); }); }, 30000);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && S) F.refresh().then(function (s) { S = s; render(); }).catch(function () {}); });
+  if (!F) { $('#app').textContent = 'Plugin missing'; return; }
+  load().then(function (s) { if (s.code) return F.refresh().then(function (x) { S = x; }).catch(function () {}); }).then(render).catch(function () { $('#app').textContent = 'Error'; });
+})();
+</script>
+</body>
+</html>

@@ -3,6 +3,7 @@ name: Build APK
 on:
   push:
     branches: [main, master]
+    paths-ignore: ['family/**', '.github/workflows/build-family.yml']
   workflow_dispatch:
 
 jobs:
