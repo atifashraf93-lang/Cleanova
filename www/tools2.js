@@ -58,7 +58,7 @@ window.CLifeInit7 = function (CL) {
   reg('tbook', '🚌', 3, ['سفر اور بکنگ', 'Travel & booking'], 'travel', ['بس، ٹرین، ہوٹل، فلائٹ کی بکنگ اور میرے سفر', 'Bus, train, hotel, flight and my trips'], 'سفر بکنگ ٹکٹ بس ٹرین ریل ہوٹل فلائٹ جہاز travel booking ticket bus train hotel flight daewoo faisal movers railway pia airblue booking agoda', true);
   reg('tools', '🧰', 6, ['تمام ٹولز', 'All tools'], 'daily', ['سرچ اور زمرے کے ساتھ سب ٹولز', 'Search and browse every tool'], 'ٹولز سرچ search all tools سب', false);
   tileMore.forEach(function (m) { var e = EX[m[0]] || ['daily', '', '', '']; reg(m[0], m[1], m[2], m[3], e[0], [e[1], e[2]], e[3], false); });
-  CL.REG = REG; CL.regTool = function (id, ic, c, n, cat, d, kw, isNew) { reg(id, ic, c, n, cat, d, kw, isNew); };
+  CL.homeHooks = []; CL.REG = REG; CL.regTool = function (id, ic, c, n, cat, d, kw, isNew) { reg(id, ic, c, n, cat, d, kw, isNew); };
 
   /* ================= TRACKING ================= */
   function opened() { return lget('tl.opened', {}); }
@@ -124,6 +124,7 @@ window.CLifeInit7 = function (CL) {
       var sb = $('#tsb'); if (sb) sb.onclick = function () { TF.q = ''; nav('tools'); };
       bind('otdl', function () { lset('tl.skip', dayNum()); V.life(true); });
       bind('otdn', function (id) { var d = lget('tl.dis', []); if (d.indexOf(id) < 0) d.push(id); lset('tl.dis', d); lset('tl.otd', null); CL.toast('ٹھیک ہے، یہ نہیں دکھائیں گے', 'OK, will not show this one'); V.life(true); });
+      (CL.homeHooks || []).forEach(function (fn) { try { fn(soft); } catch (e) { /* ignore */ } });
       if (!soft) setTimeout(maybeWhatsNew, 1500);
     } catch (e) { /* keep original home */ }
   };
@@ -403,6 +404,7 @@ window.CLifeInit7 = function (CL) {
 
   /* ================= HINTS, TRACKING, REGISTER ================= */
   var HINTS = { fuel: ['tbook', 'سفر پر جانا ہے؟ بس، ٹرین یا ہوٹل بھی یہیں بک کریں', 'Planning a trip? Book bus, train or hotel too'], places: ['tbook', 'راستے میں ہوٹل یا اڈہ ڈھونڈنا ہو تو "سفر اور بکنگ" دیکھیں', 'Need a hotel or terminal? Try Travel & booking'], ledger: ['split', 'دوستوں میں بل بانٹنا ہو تو "بل بانٹیں" بھی دیکھیں', 'Splitting a bill? Try Split bill'], split: ['ledger', 'کسی سے رقم لینی ہو تو "ادھار" میں لکھ لیں', 'Someone owes you? Note it in Ledger'], tbook: ['fuel', 'گاڑی سے جا رہے ہیں؟ "فیول خرچ" سے خرچ نکالیں', 'Driving? Work out the cost in Fuel cost'], pks: ['sos', 'ایمرجنسی میں "SOS" میں اپنے رابطے پہلے سے رکھیں', 'Set up your contacts in SOS beforehand'], status: ['wachat', 'کسی کو بھیجنا ہے؟ "نمبر پر چیٹ" سے نمبر محفوظ کیے بغیر بھیجیں', 'Send to someone via Chat by number'], qr: ['status', 'اپنی بات کو خوبصورت تصویر بنانا ہو تو "اسٹیٹس بنائیں"', 'Make a nice picture with Status maker'], rates: ['calc', 'حساب کرنا ہے؟ کیلکولیٹر بھی کھولیں', 'Need maths? Open Calculators'], weather: ['tbook', 'موسم دیکھ کر سفر کا پروگرام بنا رہے ہیں؟', 'Planning a trip around the weather?'] };
+  CL.HINTS = HINTS;
   function addHint(id) {
     var h = HINTS[id]; if (!h || !REG[h[0]] || S.view !== id) return;
     var b = $('#body'); if (!b || b.querySelector('.hintx')) return;
