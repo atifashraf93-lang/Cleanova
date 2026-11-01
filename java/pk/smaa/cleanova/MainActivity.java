@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(WebPlugin.class);
         registerPlugin(BackupPlugin.class);
         registerPlugin(FilesPlugin.class);
+        registerPlugin(FamilyAlertPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

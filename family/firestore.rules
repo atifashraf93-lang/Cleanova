@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signed() { return request.auth != null; }
+    function circleData(c) { return get(/databases/$(db)/documents/circles/$(c)).data; }
+    function isAdmin(c) { return signed() && circleData(c).admin == request.auth.uid; }
+    function isMember(c) {
+      return signed()
+        && exists(/databases/$(db)/documents/circles/$(c)/members/$(request.auth.uid))
+        && get(/databases/$(db)/documents/circles/$(c)/members/$(request.auth.uid)).data.ok == true;
+    }
+    match /circles/{c} {
+      allow get: if signed();
+      allow create: if signed() && request.resource.data.admin == request.auth.uid;
+      allow update, delete: if isAdmin(c);
+      match /members/{u} {
+        allow read: if isMember(c) || isAdmin(c) || (signed() && request.auth.uid == u);
+        allow create: if signed() && request.auth.uid == u
+          && request.resource.data.ok == (circleData(c).admin == request.auth.uid);
+        allow update: if isAdmin(c)
+          || (signed() && request.auth.uid == u && request.resource.data.ok == resource.data.ok);
+        allow delete: if isAdmin(c) || (signed() && request.auth.uid == u);
+        match /track/{t} {
+          allow read: if isMember(c) || isAdmin(c) || (signed() && request.auth.uid == u);
+          allow create: if signed() && request.auth.uid == u;
+          allow delete: if isAdmin(c) || (signed() && request.auth.uid == u);
+        }
+      }
+      match /events/{e} {
+        allow read: if isMember(c) || isAdmin(c);
+        allow create: if signed() && request.resource.data.uid == request.auth.uid;
+        allow delete: if isAdmin(c);
+      }
+    }
+  }
+}
