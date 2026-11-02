@@ -181,6 +181,7 @@ window.CLifeInit12 = function (CL) {
   }
   function vStudio() {
     CL.setTop(T('فوٹو اسٹوڈیو', 'Photo Studio'));
+    if (ST.mode !== 'cam') { var ov = document.getElementById('camov'); if (ov) stopCam(); }
     if (ST.mode === 'cam' && S.view === 'studio') return screenCam();
     if (ST.mode === 'edit' && ST.base) return screenEdit();
     if (ST.mode === 'collage') return screenCollage();
@@ -308,55 +309,115 @@ window.CLifeInit12 = function (CL) {
     };
   }
 
-  /* ---------- live camera ---------- */
-  var SEL = { filter: 'orig', fx: {}, timer: 0 };
-  function stopCam() { var c = ST.cam; if (!c) return; try { c.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ } ST.cam = null; }
+  /* ---------- live camera (full screen, controls on top of the picture) ---------- */
+  var SEL = { filter: 'orig', fx: {}, timer: 0, ar: 0.75, tab: 'face', beauty: 0, expo: 0, grid: false, zoom: 1, torch: false, bg: 'none', pop: '' };
+  var AR_L = [[0.75, '3:4'], [0.5625, '9:16'], [1, '1:1'], [0, tt('پورا', 'Full')]];
+  function stopCam() { var c = ST.cam; if (c) { try { c.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ } ST.cam = null; } clearTimeout(ST.camT); var o = document.getElementById('camov'); if (o) o.remove(); }
+  function ob(id, ic, lab, on) { return '<button id="' + id + '" style="width:46px;height:46px;border-radius:50%;border:0;background:' + (on ? 'rgba(45,212,191,.9)' : 'rgba(0,0,0,.5)') + ';color:' + (on ? '#052' : '#fff') + ';font-size:20px;position:relative;margin-bottom:24px">' + ic + '<small style="position:absolute;top:48px;left:50%;transform:translateX(-50%);font-size:10px;white-space:nowrap;color:#e5e7eb;font-weight:400">' + lab + '</small></button>'; }
   function screenCam() {
-    $('#body').innerHTML = '<div class="card" style="margin-top:6px;padding:6px"><div style="position:relative"><canvas id="cvl" width="480" height="640" style="width:100%;height:52vh;object-fit:contain;border-radius:12px;display:block;background:#000"></canvas><div id="cst" style="position:absolute;inset:0;display:grid;place-content:center;color:#fff;text-align:center;padding:16px;pointer-events:none">' + tt('کیمرہ شروع ہو رہا ہے…', 'Starting camera…') + '</div><div id="cnt" style="position:absolute;inset:0;display:none;place-content:center;font-size:96px;font-weight:800;color:#fff;text-shadow:0 2px 16px #000;text-align:center"></div></div></div>' +
-      '<div style="display:flex;align-items:center;justify-content:space-around;margin:6px 0"><button class="sbtn" id="cb" style="min-height:48px">←</button><button class="sbtn" id="cfp" style="min-height:48px">🔄</button><button id="csh" style="width:70px;height:70px;border-radius:50%;border:5px solid #fff;background:var(--acc)" aria-label="shutter"></button><button class="sbtn' + (SEL.timer ? ' p' : '') + '" id="ctm" style="min-height:48px">⏱ ' + (SEL.timer ? '3s' : tt('بند', 'off')) + '</button></div>' +
-      '<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0">' + FILTERS.map(function (f) { return '<button class="chip' + (SEL.filter === f[0] ? ' on' : '') + '" data-cf="' + f[0] + '" style="flex:none">' + tt(f[2], f[3]) + '</button>'; }).join('') + '</div>' +
-      '<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0">' + FACEFX.map(function (f) { return '<button class="sbtn' + (SEL.fx[f[0]] ? ' p' : '') + '" data-cx="' + f[0] + '" style="flex:none;min-height:46px;font-size:22px;padding:0 10px">' + f[1] + '</button>'; }).join('') + '</div><p class="note" id="cnote"></p>' + CL.footer();
-    bind('cf', function (id) { SEL.filter = id; screenCam(); }); bind('cx', function (id) { SEL.fx[id] = !SEL.fx[id]; screenCam(); });
-    $('#cb').onclick = function () { stopCam(); ST.mode = 'home'; vStudio(); };
-    $('#cfp').onclick = function () { ST.facing = ST.facing === 'user' ? 'environment' : 'user'; startCam(); };
-    $('#ctm').onclick = function () { SEL.timer = SEL.timer ? 0 : 3; screenCam(); };
+    $('#body').innerHTML = '<div class="card center"><p class="mut">' + tt('کیمرہ کھلا ہے…', 'Camera is open…') + '</p></div>';
+    var o = document.getElementById('camov'); if (o) o.remove();
+    o = document.createElement('div'); o.id = 'camov'; o.style.cssText = 'position:fixed;inset:0;z-index:60;background:#000;color:#fff;direction:ltr;font-family:system-ui,"Noto Naskh Arabic",sans-serif;overflow:hidden;touch-action:manipulation';
+    o.innerHTML = '<div style="position:absolute;inset:0;display:grid;place-content:center"><canvas id="cvl" width="480" height="640"></canvas></div><div id="cst" style="position:absolute;inset:0;display:grid;place-content:center;text-align:center;padding:16px;pointer-events:none">' + tt('کیمرہ شروع ہو رہا ہے…', 'Starting camera…') + '</div><div id="cnt" style="position:absolute;inset:0;display:none;place-content:center;font-size:110px;font-weight:800;text-shadow:0 2px 16px #000;pointer-events:none"></div>' +
+      '<div id="ctopb" style="position:absolute;top:0;inset-inline:0;padding:max(14px,env(safe-area-inset-top)) 12px 26px;display:flex;justify-content:space-between;background:linear-gradient(rgba(0,0,0,.55),transparent)"></div>' +
+      '<div id="crail" style="position:absolute;top:110px;right:12px;display:flex;flex-direction:column"></div><div id="cpop" style="position:absolute;top:110px;right:70px;left:12px;display:none;background:rgba(0,0,0,.6);border-radius:14px;padding:10px 14px"></div>' +
+      '<div id="czoom" style="position:absolute;bottom:230px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.5);border-radius:20px;padding:3px 6px;display:flex;gap:2px"></div><p id="cnote" style="position:absolute;bottom:222px;inset-inline:12px;text-align:center;font-size:13px;margin:0;text-shadow:0 1px 6px #000"></p>' +
+      '<div style="position:absolute;bottom:0;inset-inline:0;padding:10px 0 max(18px,env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.75))"><div id="ctabs" style="display:flex;justify-content:center;gap:24px;font-size:14px;margin-bottom:8px"></div><div id="ccar" style="display:flex;gap:10px;overflow-x:auto;padding:4px 12px 10px"></div><div style="display:flex;justify-content:space-around;align-items:center"><button id="cgal" style="width:48px;height:48px;border-radius:12px;border:2px solid #fff;background:#475569;font-size:22px;color:#fff">🖼</button><button id="csh" aria-label="shutter" style="width:76px;height:76px;border-radius:50%;border:5px solid #fff;background:rgba(45,212,191,.92)"></button><button id="ccol" style="width:48px;height:48px;border-radius:12px;border:2px solid #fff;background:#475569;font-size:22px;color:#fff">🧩</button></div></div>';
+    document.body.appendChild(o); ovUI();
     $('#csh').onclick = shutter;
+    $('#cgal').onclick = function () { stopCam(); ST.mode = 'home'; pickFiles('image/*').then(function (f) { if (f[0]) openFile(f[0]); else vStudio(); }); };
+    $('#ccol').onclick = function () { stopCam(); ST.col = ST.col || { imgs: [], lay: 0, gap: 8, rad: 0, bg: '#ffffff', ar: 1 }; ST.mode = 'collage'; vStudio(); };
     if (!ST.cam) startCam(); else camLoop();
   }
+  function ovUI() {
+    var arL = AR_L.filter(function (a) { return a[0] === SEL.ar; })[0];
+    $('#ctopb').innerHTML = ob('cx', '✕', tt('بند', 'Close')) + ob('cfl', '⚡', tt('فلیش', 'Flash'), SEL.torch) + ob('ctm', '⏱', SEL.timer ? SEL.timer + 's' : tt('ٹائمر', 'Timer'), SEL.timer) + ob('car', '▭', arL ? arL[1] : '', false) + ob('cfp', '🔄', tt('آگے/پیچھے', 'Flip'));
+    $('#crail').innerHTML = ob('cbe', '✨', tt('بیوٹی', 'Beauty'), SEL.beauty > 0) + ob('cex', '🌗', tt('روشنی', 'Light'), SEL.expo !== 0) + ob('cgr', '⊞', tt('گرڈ', 'Grid'), SEL.grid);
+    $('#czoom').innerHTML = [1, 2, 3].map(function (z) { return '<button data-cz="' + z + '" style="border:0;border-radius:16px;padding:4px 12px;background:' + (SEL.zoom === z ? 'rgba(45,212,191,.9)' : 'transparent') + ';color:' + (SEL.zoom === z ? '#052' : '#fff') + ';font-weight:700">' + z + '×</button>'; }).join('');
+    var tabs = [['filter', tt('فلٹر', 'Filters')], ['face', tt('چہرے کے اسٹیکر', 'Face stickers')], ['bg', tt('بیک گراؤنڈ', 'Background')]];
+    $('#ctabs').innerHTML = tabs.map(function (t) { return '<span data-ct="' + t[0] + '" style="padding-bottom:3px;border-bottom:2px solid ' + (SEL.tab === t[0] ? '#2dd4bf' : 'transparent') + ';font-weight:' + (SEL.tab === t[0] ? 700 : 400) + '">' + t[1] + '</span>'; }).join('');
+    var car = '', rb = function (attr, key, inner, on, lab) { return '<button ' + attr + '="' + key + '" style="flex:none;width:54px;height:54px;border-radius:50%;border:3px solid ' + (on ? '#2dd4bf' : 'transparent') + ';background:rgba(255,255,255,.2);color:#fff;font-size:' + (lab ? '11' : '24') + 'px;line-height:1.1;padding:0">' + inner + '</button>'; };
+    if (SEL.tab === 'filter') car = FILTERS.map(function (f) { return rb('data-cf', f[0], tt(f[2], f[3]), SEL.filter === f[0], 1); }).join('');
+    else if (SEL.tab === 'face') car = rb('data-cx', '_none', '🚫', !Object.keys(SEL.fx).some(function (k) { return SEL.fx[k]; })) + FACEFX.map(function (f) { return rb('data-cx', f[0], f[1], !!SEL.fx[f[0]]); }).join('');
+    else car = [['none', tt('بغیر', 'None')], ['blur', tt('دھندلا', 'Blur')], ['color', tt('رنگ', 'Color')]].map(function (b) { return rb('data-cbg', b[0], b[1], SEL.bg === b[0], 1); }).join('');
+    $('#ccar').innerHTML = car;
+    var pop = $('#cpop'); pop.style.display = SEL.pop ? 'block' : 'none';
+    if (SEL.pop === 'beauty') pop.innerHTML = '<div style="display:flex;justify-content:space-between;font-size:13px"><span>' + tt('جلد ہموار', 'Smoothing') + '</span><b>' + SEL.beauty + '</b></div><input id="cpr" type="range" min="0" max="100" value="' + SEL.beauty + '" style="width:100%">';
+    if (SEL.pop === 'expo') pop.innerHTML = '<div style="display:flex;justify-content:space-between;font-size:13px"><span>' + tt('روشنی', 'Brightness') + '</span><b>' + SEL.expo + '</b></div><input id="cpr" type="range" min="-40" max="40" value="' + SEL.expo + '" style="width:100%">';
+    var pr = $('#cpr'); if (pr) pr.oninput = function () { var v = +pr.value; if (SEL.pop === 'beauty') SEL.beauty = v; else SEL.expo = v; pr.previousElementSibling.lastChild.textContent = v; };
+    var noteN = $('#cnote'); if (noteN && SEL.tab === 'bg' && SEL.bg !== 'none') noteN.textContent = tt('بیک گراؤنڈ تصویر لینے کے بعد ایڈیٹر میں لگے گا۔', 'Background is applied in the editor after you take the photo.'); else if (noteN && !noteN.dataset.keep) noteN.textContent = '';
+    wireOv();
+  }
+  function wireOv() {
+    var g = function (id, fn) { var e = document.getElementById(id); if (e) e.onclick = fn; };
+    g('cx', function () { stopCam(); ST.mode = 'home'; vStudio(); });
+    g('cfp', function () { ST.facing = ST.facing === 'user' ? 'environment' : 'user'; SEL.torch = false; startCam(); ovUI(); });
+    g('ctm', function () { SEL.timer = SEL.timer === 0 ? 3 : SEL.timer === 3 ? 10 : 0; ovUI(); });
+    g('car', function () { var i = AR_L.findIndex(function (a) { return a[0] === SEL.ar; }); SEL.ar = AR_L[(i + 1) % AR_L.length][0]; ovUI(); });
+    g('cfl', function () { var c = ST.cam, t = c && c.stream.getVideoTracks()[0], caps = t && t.getCapabilities ? t.getCapabilities() : null; if (!caps || !caps.torch) { CL.toast('اس کیمرے میں فلیش دستیاب نہیں (پیچھے والا کیمرہ آزمائیں)', 'Flash not available on this camera (try the back one)'); return; } SEL.torch = !SEL.torch; t.applyConstraints({ advanced: [{ torch: SEL.torch }] }).catch(function () { SEL.torch = false; }); ovUI(); });
+    g('cbe', function () { SEL.pop = SEL.pop === 'beauty' ? '' : 'beauty'; ovUI(); });
+    g('cex', function () { SEL.pop = SEL.pop === 'expo' ? '' : 'expo'; ovUI(); });
+    g('cgr', function () { SEL.grid = !SEL.grid; ovUI(); });
+    [].forEach.call(document.querySelectorAll('#camov [data-cz]'), function (b) { b.onclick = function () { SEL.zoom = +b.dataset.cz; ovUI(); }; });
+    [].forEach.call(document.querySelectorAll('#camov [data-ct]'), function (b) { b.onclick = function () { SEL.tab = b.dataset.ct; SEL.pop = ''; ovUI(); }; });
+    [].forEach.call(document.querySelectorAll('#camov [data-cf]'), function (b) { b.onclick = function () { SEL.filter = b.dataset.cf; ovUI(); }; });
+    [].forEach.call(document.querySelectorAll('#camov [data-cbg]'), function (b) { b.onclick = function () { SEL.bg = b.dataset.cbg; ovUI(); }; });
+    [].forEach.call(document.querySelectorAll('#camov [data-cx]'), function (b) { b.onclick = function () { var k = b.dataset.cx; if (k === '_none') SEL.fx = {}; else SEL.fx[k] = !SEL.fx[k]; ovUI(); }; });
+  }
   function startCam() {
-    stopCam();
+    var c0 = ST.cam; if (c0) { try { c0.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ } ST.cam = null; }
+    var s0 = $('#cst'); if (s0) s0.style.display = 'grid';
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camFallback(); return; }
     var ask = (SP() && SP().camRequest) ? SP().camRequest().catch(function () { return { granted: true }; }) : Promise.resolve({ granted: true });
-    clearTimeout(ST.camT); ST.camT = setTimeout(function () { if (ST.mode === 'cam' && (!ST.cam || !ST.cam.v.videoWidth)) { var s = $('#cst'); if (s) s.style.display = 'none'; camFallback(); } }, 7000);
+    clearTimeout(ST.camT); ST.camT = setTimeout(function () { if (ST.mode === 'cam' && (!ST.cam || !ST.cam.v.videoWidth)) camFallback(); }, 8000);
     ask.then(function (r) { if (r && r.granted === false) throw new Error('denied'); return navigator.mediaDevices.getUserMedia({ video: { facingMode: ST.facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }).then(function (stream) {
-      if (ST.mode !== 'cam') { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+      if (ST.mode !== 'cam' || !document.getElementById('camov')) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
       var v = document.createElement('video'); v.playsInline = true; v.muted = true; v.srcObject = stream; v.play().catch(function () {});
       ST.cam = { stream: stream, v: v, faces: [], t: 0, busy: false }; camLoop();
     }).catch(function () { camFallback(); });
   }
-  function camFallback() { var s = $('#cst'); if (s) s.style.display = 'none'; var n = $('#cnote'); if (n) n.innerHTML = tt('کیمرہ نہیں کھل سکا۔ فون کی سیٹنگ میں Cleanova کو کیمرے کی اجازت دیں، یا ', 'Camera could not start. Allow Camera for Cleanova in phone settings, or ') + '<button class="sbtn" id="csys" style="min-height:38px">' + tt('سسٹم کیمرہ استعمال کریں', 'Use system camera') + '</button>'; var b = $('#csys'); if (b) b.onclick = function () { var i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.setAttribute('capture', ST.facing === 'user' ? 'user' : 'environment'); i.onchange = function () { if (i.files[0]) openFile(i.files[0]); }; i.click(); }; }
+  function camFallback() {
+    var s = $('#cst'); if (s) s.style.display = 'none'; var n = $('#cnote'); if (!n) return; n.dataset.keep = '1';
+    n.style.pointerEvents = 'auto'; n.innerHTML = tt('کیمرہ نہیں کھل سکا۔ فون کی سیٹنگ میں Cleanova کو کیمرے کی اجازت دیں، یا ', 'Camera could not start. Allow Camera for Cleanova in phone settings, or ') + '<button id="csys" style="min-height:36px;border-radius:10px;border:0;padding:0 12px;background:#2dd4bf;color:#052;font-weight:700">' + tt('سسٹم کیمرہ', 'system camera') + '</button>';
+    var b = $('#csys'); if (b) b.onclick = function () { var i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.setAttribute('capture', ST.facing === 'user' ? 'user' : 'environment'); i.onchange = function () { if (i.files[0]) { stopCam(); openFile(i.files[0]); } }; i.click(); };
+  }
   function mirrorFace(f, flip) {
     var m = function (p) { return p ? { x: flip ? 1 - p.x : p.x, y: p.y } : null; };
     var o = { x: flip ? 1 - f.x - f.w : f.x, y: f.y, w: f.w, h: f.h, roll: 0, le: m(f.le), re: m(f.re), nose: m(f.nose), lc: m(f.lc), rc: m(f.rc), mb: m(f.mb) };
     return normFace(o);
   }
+  function cropOf(v) { var vw = v.videoWidth, vh = v.videoHeight, ar = SEL.ar || vw / vh, sw, sh; if (vw / vh > ar) { sh = vh; sw = vh * ar; } else { sw = vw; sh = vw / ar; } sw /= SEL.zoom; sh /= SEL.zoom; return { vw: vw, vh: vh, sw: sw, sh: sh, sx: (vw - sw) / 2, sy: (vh - sh) / 2 }; }
   function camLoop() {
-    var c = ST.cam, cv = $('#cvl'); if (!c || !cv || S.view !== 'studio' || ST.mode !== 'cam') { if (!cv || S.view !== 'studio' || ST.mode !== 'cam') stopCam(); return; }
+    var c = ST.cam; if (!c || !document.getElementById('cvl')) return;
     if (c.loop) return; c.loop = true;
     (function tick() {
-      if (!ST.cam || ST.cam !== c || S.view !== 'studio' || ST.mode !== 'cam' || !$('#cvl')) { if (ST.cam === c) stopCam(); return; }
-      var v = c.v; cv = $('#cvl');
+      var cv = document.getElementById('cvl');
+      if (!ST.cam || ST.cam !== c || S.view !== 'studio' || ST.mode !== 'cam' || !cv) { if (ST.cam === c) stopCam(); return; }
+      var v = c.v;
       if (v.videoWidth) {
-        var w = 480, h = Math.round(480 * v.videoHeight / v.videoWidth); if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } var st0 = $('#cst'); if (st0) st0.style.display = 'none';
+        var s0 = $('#cst'); if (s0 && s0.style.display !== 'none') s0.style.display = 'none';
+        var cr = cropOf(v), w = 480, h = Math.round(480 * cr.sh / cr.sw);
+        if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+        var fit = Math.min(window.innerWidth / w, window.innerHeight / h); cv.style.width = Math.round(w * fit) + 'px'; cv.style.height = Math.round(h * fit) + 'px';
         var x = cv.getContext('2d'), flip = ST.facing === 'user', f = FILTERS.filter(function (q) { return q[0] === SEL.filter; })[0];
-        x.save(); if (flip) { x.translate(w, 0); x.scale(-1, 1); } x.filter = f && f[1] ? f[1] : 'none'; x.drawImage(v, 0, 0, w, h); x.restore(); x.filter = 'none';
-        var any = Object.keys(SEL.fx).some(function (k) { return SEL.fx[k]; });
-        if (any) c.faces.forEach(function (fo) { drawFaceFx(x, { e1: { x: fo.e1.x * w, y: fo.e1.y * h }, e2: { x: fo.e2.x * w, y: fo.e2.y * h }, nose: fo.nose && { x: fo.nose.x * w, y: fo.nose.y * h }, lc: fo.lc && { x: fo.lc.x * w, y: fo.lc.y * h }, rc: fo.rc && { x: fo.rc.x * w, y: fo.rc.y * h } }, SEL.fx); });
-        if (any && !c.busy && Date.now() - c.t > 200 && SP()) {
-          c.busy = true; c.t = Date.now(); var s = mk(240, 240 * v.videoHeight / v.videoWidth); s.getContext('2d').drawImage(v, 0, 0, s.width, s.height);
-          SP().faces({ data: b64(s, 0.5) }).then(function (r) { var nf = (r.faces || []).map(function (q) { return mirrorFace(q, flip); }); c.faces = lerpFaces(c.faces, nf); }).catch(function () { c.faces = []; }).then(function () { c.busy = false; });
+        x.save(); if (flip) { x.translate(w, 0); x.scale(-1, 1); } x.filter = ((f && f[1]) || '') + ' brightness(' + (1 + SEL.expo / 100) + ')'; x.drawImage(v, cr.sx, cr.sy, cr.sw, cr.sh, 0, 0, w, h); x.restore(); x.filter = 'none';
+        var any = Object.keys(SEL.fx).some(function (k) { return SEL.fx[k]; }), need = any || SEL.beauty > 0;
+        var mp = function (p) { return p && { x: (p.x * cr.vw - cr.sx) * w / cr.sw, y: (p.y * cr.vh - cr.sy) * h / cr.sh }; };
+        var fo = c.faces.map(function (q) { return { box: { x: (q.x * cr.vw - cr.sx) * w / cr.sw, y: (q.y * cr.vh - cr.sy) * h / cr.sh, w: q.w * cr.vw * w / cr.sw, h: q.h * cr.vh * h / cr.sh }, e1: mp(q.e1), e2: mp(q.e2), nose: mp(q.nose), lc: mp(q.lc), rc: mp(q.rc) }; });
+        if (SEL.beauty > 0 && fo.length) {
+          var bl = c.bl || (c.bl = mk(w, h)), mc = c.mc || (c.mc = mk(w, h)); if (bl.width !== w || bl.height !== h) { bl.width = w; bl.height = h; mc.width = w; mc.height = h; }
+          var b = bl.getContext('2d'), m = mc.getContext('2d'); b.globalCompositeOperation = 'source-over'; b.clearRect(0, 0, w, h); b.filter = 'blur(3px)'; b.drawImage(cv, 0, 0); b.filter = 'none'; m.clearRect(0, 0, w, h);
+          fo.forEach(function (q) { var cx = q.box.x + q.box.w / 2, cy = q.box.y + q.box.h / 2; m.save(); m.translate(cx, cy); m.scale(q.box.w * 0.7, q.box.h * 0.8); var gg = m.createRadialGradient(0, 0, 0, 0, 0, 1); gg.addColorStop(0, 'rgba(255,255,255,1)'); gg.addColorStop(0.6, 'rgba(255,255,255,.85)'); gg.addColorStop(1, 'rgba(255,255,255,0)'); m.fillStyle = gg; m.fillRect(-1, -1, 2, 2); m.restore(); });
+          b.globalCompositeOperation = 'destination-in'; b.drawImage(mc, 0, 0); b.globalCompositeOperation = 'source-over';
+          x.globalAlpha = SEL.beauty / 100; x.drawImage(bl, 0, 0); x.globalAlpha = 1;
         }
-        if (any && !SP()) { var n = $('#cnote'); if (n && !n.textContent) n.textContent = tt('چہرے کے اسٹیکر صرف ایپ میں چلتے ہیں۔', 'Face stickers work only inside the app.'); }
+        if (any) fo.forEach(function (q) { drawFaceFx(x, q, SEL.fx); });
+        if (SEL.grid) { x.strokeStyle = 'rgba(255,255,255,.45)'; x.lineWidth = 1; x.beginPath(); for (var i = 1; i < 3; i++) { x.moveTo(w * i / 3, 0); x.lineTo(w * i / 3, h); x.moveTo(0, h * i / 3); x.lineTo(w, h * i / 3); } x.stroke(); }
+        if (need && !c.busy && Date.now() - c.t > 200 && SP()) {
+          c.busy = true; c.t = Date.now(); var sm = mk(240, 240 * v.videoHeight / v.videoWidth); sm.getContext('2d').drawImage(v, 0, 0, sm.width, sm.height);
+          SP().faces({ data: b64(sm, 0.5) }).then(function (r) { c.faces = lerpFaces(c.faces, (r.faces || []).map(function (q) { return mirrorFace(q, flip); })); }).catch(function () { c.faces = []; }).then(function () { c.busy = false; });
+        }
+        if (need && !SP()) { var n = $('#cnote'); if (n && !n.textContent) n.textContent = tt('چہرے کے اسٹیکر اور بیوٹی صرف ایپ میں چلتے ہیں۔', 'Face stickers and beauty work only inside the app.'); }
       }
       requestAnimationFrame(tick);
     })();
@@ -364,15 +425,15 @@ window.CLifeInit12 = function (CL) {
   function lerpFaces(prev, nf) {
     if (prev.length !== nf.length) return nf;
     var L = function (a, b) { return a + (b - a) * 0.55; }, P = function (a, b) { return a && b ? { x: L(a.x, b.x), y: L(a.y, b.y) } : b; };
-    return nf.map(function (n, i) { var p = prev[i]; return { x: n.x, y: n.y, w: n.w, h: n.h, e1: P(p.e1, n.e1), e2: P(p.e2, n.e2), nose: P(p.nose, n.nose), lc: P(p.lc, n.lc), rc: P(p.rc, n.rc), mb: P(p.mb, n.mb) }; });
+    return nf.map(function (n, i) { var p = prev[i]; return { x: L(p.x, n.x), y: L(p.y, n.y), w: L(p.w, n.w), h: L(p.h, n.h), e1: P(p.e1, n.e1), e2: P(p.e2, n.e2), nose: P(p.nose, n.nose), lc: P(p.lc, n.lc), rc: P(p.rc, n.rc), mb: P(p.mb, n.mb) }; });
   }
   function shutter() {
     var c = ST.cam; if (!c || !c.v.videoWidth) { CL.toast('کیمرہ تیار نہیں', 'Camera not ready'); return; }
     var go = function () {
-      var v = c.v, w = v.videoWidth, h = v.videoHeight, full = mk(w, h), x = full.getContext('2d');
-      if (ST.facing === 'user') { x.translate(w, 0); x.scale(-1, 1); } x.drawImage(v, 0, 0, w, h);
-      stopCam(); ST.P = defaults(); ST.P.filter = SEL.filter; Object.keys(SEL.fx).forEach(function (k) { if (SEL.fx[k]) ST.P.face[k] = true; });
-      loadBase(full, w, h).then(function () { ST.mode = 'edit'; ST.tab = 'filter'; vStudio(); });
+      var v = c.v, cr = cropOf(v), full = mk(cr.sw, cr.sh), x = full.getContext('2d');
+      if (ST.facing === 'user') { x.translate(full.width, 0); x.scale(-1, 1); } x.drawImage(v, cr.sx, cr.sy, cr.sw, cr.sh, 0, 0, full.width, full.height);
+      stopCam(); ST.P = defaults(); ST.P.filter = SEL.filter; ST.P.bright = SEL.expo; ST.P.smooth = SEL.beauty; Object.keys(SEL.fx).forEach(function (k) { if (SEL.fx[k]) ST.P.face[k] = true; }); if (SEL.bg !== 'none') ST.P.bg.mode = SEL.bg;
+      loadBase(full, full.width, full.height).then(function () { ST.mode = 'edit'; ST.tab = SEL.bg !== 'none' ? 'bg' : 'filter'; if (SEL.bg !== 'none') getMask().then(redraw); vStudio(); });
     };
     if (!SEL.timer) { go(); return; }
     var el = $('#cnt'), n = SEL.timer; el.style.display = 'grid'; el.textContent = n;
