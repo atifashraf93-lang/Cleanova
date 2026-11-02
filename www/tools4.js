@@ -23,6 +23,7 @@ window.CLifeInit9 = function (CL) {
     try { var f = new File([blob], name, { type: mime }); if (navigator.canShare && navigator.canShare({ files: [f] })) return navigator.share({ files: [f] }).catch(function () {}); } catch (e) { /* fall through */ }
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); CL.toast('محفوظ ہو گیا', 'Saved'); return Promise.resolve();
   }
+  CL.saveOut = saveOut; CL.pickFiles = function () { return pick.apply(null, arguments); };
   function pick(accept, multiple) {
     return new Promise(function (res) { var i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.multiple = !!multiple; i.style.display = 'none'; document.body.appendChild(i); i.onchange = function () { var f = [].slice.call(i.files || []); i.remove(); res(f); }; i.click(); });
   }

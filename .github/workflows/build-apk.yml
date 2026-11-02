@@ -58,6 +58,15 @@ jobs:
           }
           GRADLE
 
+      - name: ML Kit (face and background models, bundled)
+        run: |
+          cat >> android/app/build.gradle <<'GRADLE'
+          dependencies {
+              implementation 'com.google.mlkit:face-detection:16.1.7'
+              implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta6'
+          }
+          GRADLE
+
       - name: Permissions (storage access)
         run: |
           M=android/app/src/main/AndroidManifest.xml
