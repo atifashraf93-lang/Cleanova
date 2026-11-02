@@ -32,5 +32,39 @@ service cloud.firestore {
         allow delete: if isAdmin(c);
       }
     }
+
+    /* ---------- Cleanova Chat rooms ---------- */
+    function roomData(r) { return get(/databases/$(db)/documents/rooms/$(r)).data; }
+    function roomAdmin(r) { return signed() && roomData(r).admin == request.auth.uid; }
+    function roomMember(r) {
+      return signed()
+        && exists(/databases/$(db)/documents/rooms/$(r)/members/$(request.auth.uid))
+        && get(/databases/$(db)/documents/rooms/$(r)/members/$(request.auth.uid)).data.ok == true;
+    }
+    match /rooms/{r} {
+      allow get: if signed();
+      allow create: if signed() && request.resource.data.admin == request.auth.uid;
+      allow update, delete: if roomAdmin(r);
+      match /members/{u} {
+        allow read: if roomMember(r) || roomAdmin(r) || (signed() && request.auth.uid == u);
+        allow create: if signed() && request.auth.uid == u
+          && ((roomData(r).admin == request.auth.uid && request.resource.data.ok == true)
+              || (roomData(r).mode != 'shut' && request.resource.data.ok == (roomData(r).mode == 'open')));
+        allow update: if roomAdmin(r)
+          || (signed() && request.auth.uid == u && request.resource.data.ok == resource.data.ok);
+        allow delete: if roomAdmin(r) || (signed() && request.auth.uid == u);
+      }
+      match /msgs/{m} {
+        allow read: if roomMember(r) || roomAdmin(r);
+        allow create: if roomMember(r) && request.resource.data.uid == request.auth.uid && roomData(r).closed != true;
+        allow update: if roomMember(r) && resource.data.uid == request.auth.uid;
+        allow delete: if roomAdmin(r) || (signed() && resource.data.uid == request.auth.uid);
+      }
+      match /acts/{a} {
+        allow read: if roomMember(r) || roomAdmin(r);
+        allow create, update: if roomMember(r) && request.resource.data.uid == request.auth.uid && roomData(r).closed != true;
+        allow delete: if roomAdmin(r) || (signed() && resource.data.uid == request.auth.uid);
+      }
+    }
   }
 }

@@ -3,6 +3,7 @@ package pk.smaa.cleanova;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Build;
 
 /** Restarts the battery monitor after the phone restarts, if the user had it on. */
@@ -16,6 +17,11 @@ public class BootReceiver extends BroadcastReceiver {
             }
             if (c.getSharedPreferences(TrackService.PREFS, Context.MODE_PRIVATE).getBoolean("auto", false)) {
                 Intent s = new Intent(c, TrackService.class);
+                if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(s); else c.startService(s);
+            }
+            SharedPreferences cp = c.getSharedPreferences(ChatCheck.PREFS, Context.MODE_PRIVATE);
+            if (cp.getBoolean("fast", false) && cp.getString("rooms", "[]").length() > 2) {
+                Intent s = new Intent(c, ChatService.class);
                 if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(s); else c.startService(s);
             }
         } catch (Throwable t) { /* system may refuse; the app restarts it when opened */ }

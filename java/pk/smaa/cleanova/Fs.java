@@ -71,6 +71,9 @@ final class Fs {
         if (names != null) for (int i = 0; i < names.length(); i++) q.append(i == 0 ? "?" : "&").append("updateMask.fieldPaths=").append(URLEncoder.encode(names.getString(i), "UTF-8"));
         return new JSONObject(http("PATCH", BASE + path + q, new JSONObject().put("fields", fields).toString(), null, token()));
     }
+    JSONArray query(String parent, JSONObject structured) throws Exception {
+        return new JSONArray(http("POST", BASE + parent + ":runQuery", new JSONObject().put("structuredQuery", structured).toString(), null, token()));
+    }
     void delete(String path) throws Exception { http("DELETE", BASE + path, null, null, token()); }
 
     static JSONObject s(String v) throws Exception { return new JSONObject().put("stringValue", v == null ? "" : v); }

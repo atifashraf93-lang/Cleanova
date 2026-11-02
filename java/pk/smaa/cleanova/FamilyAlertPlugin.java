@@ -51,4 +51,24 @@ public class FamilyAlertPlugin extends Plugin {
     public void checkNow(final PluginCall call) {
         new Thread(new Runnable() { @Override public void run() { try { FamilyJob.check(getContext()); } catch (Throwable t) { /* ignore */ } call.resolve(); } }).start();
     }
+
+    /** rooms: [{c:code,n:name,p:hidePreview}], fast: keep a light foreground check running, mode flags in prefs */
+    @PluginMethod
+    public void chatSetup(PluginCall call) {
+        try {
+            Context c = getContext();
+            String rooms = call.getString("rooms", "[]");
+            boolean fast = call.getBoolean("fast", false);
+            android.content.SharedPreferences.Editor e = c.getSharedPreferences(ChatCheck.PREFS, Context.MODE_PRIVATE).edit();
+            e.putString("rooms", rooms).putBoolean("fast", fast).putString("quiet", call.getString("quiet", "")).putString("muted", call.getString("muted", "[]")).apply();
+            boolean any = new org.json.JSONArray(rooms).length() > 0;
+            JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            if (any) js.schedule(new JobInfo.Builder(7789, new ComponentName(c, ChatJob.class)).setPeriodic(15 * 60 * 1000L).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPersisted(true).build());
+            else js.cancel(7789);
+            android.content.Intent s = new android.content.Intent(c, ChatService.class);
+            if (any && fast) { if (android.os.Build.VERSION.SDK_INT >= 26) c.startForegroundService(s); else c.startService(s); }
+            else c.stopService(s);
+            call.resolve();
+        } catch (Throwable t) { call.reject("chat setup failed: " + t); }
+    }
 }
