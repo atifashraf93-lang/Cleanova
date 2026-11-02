@@ -1,5 +1,6 @@
 package pk.smaa.cleanova;
 
+import android.Manifest;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -11,7 +12,10 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
@@ -31,10 +35,23 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 /** Photo Studio: on-device face landmarks and person/background mask (ML Kit models are bundled; nothing is uploaded). */
-@CapacitorPlugin(name = "Studio")
+@CapacitorPlugin(name = "Studio", permissions = { @Permission(strings = { Manifest.permission.CAMERA }, alias = "camera") })
 public class StudioPlugin extends Plugin {
     private FaceDetector faceDet;
     private Segmenter seg;
+
+    @PluginMethod
+    public void camRequest(PluginCall call) {
+        if (getPermissionState("camera") == PermissionState.GRANTED) { camCb(call); return; }
+        requestPermissionForAlias("camera", call, "camCb");
+    }
+
+    @PermissionCallback
+    private void camCb(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("granted", getPermissionState("camera") == PermissionState.GRANTED);
+        call.resolve(r);
+    }
 
     private Bitmap decode(PluginCall call) {
         String d = call.getString("data", "");

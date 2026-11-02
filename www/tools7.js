@@ -312,7 +312,7 @@ window.CLifeInit12 = function (CL) {
   var SEL = { filter: 'orig', fx: {}, timer: 0 };
   function stopCam() { var c = ST.cam; if (!c) return; try { c.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ } ST.cam = null; }
   function screenCam() {
-    $('#body').innerHTML = '<div class="card" style="margin-top:6px;padding:6px"><div style="position:relative"><canvas id="cvl" width="480" height="640" style="width:100%;border-radius:12px;display:block;background:#000;aspect-ratio:3/4"></canvas><div id="cnt" style="position:absolute;inset:0;display:none;place-content:center;font-size:96px;font-weight:800;color:#fff;text-shadow:0 2px 16px #000;text-align:center"></div></div></div>' +
+    $('#body').innerHTML = '<div class="card" style="margin-top:6px;padding:6px"><div style="position:relative"><canvas id="cvl" width="480" height="640" style="width:100%;height:52vh;object-fit:contain;border-radius:12px;display:block;background:#000"></canvas><div id="cst" style="position:absolute;inset:0;display:grid;place-content:center;color:#fff;text-align:center;padding:16px;pointer-events:none">' + tt('کیمرہ شروع ہو رہا ہے…', 'Starting camera…') + '</div><div id="cnt" style="position:absolute;inset:0;display:none;place-content:center;font-size:96px;font-weight:800;color:#fff;text-shadow:0 2px 16px #000;text-align:center"></div></div></div>' +
       '<div style="display:flex;align-items:center;justify-content:space-around;margin:6px 0"><button class="sbtn" id="cb" style="min-height:48px">←</button><button class="sbtn" id="cfp" style="min-height:48px">🔄</button><button id="csh" style="width:70px;height:70px;border-radius:50%;border:5px solid #fff;background:var(--acc)" aria-label="shutter"></button><button class="sbtn' + (SEL.timer ? ' p' : '') + '" id="ctm" style="min-height:48px">⏱ ' + (SEL.timer ? '3s' : tt('بند', 'off')) + '</button></div>' +
       '<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0">' + FILTERS.map(function (f) { return '<button class="chip' + (SEL.filter === f[0] ? ' on' : '') + '" data-cf="' + f[0] + '" style="flex:none">' + tt(f[2], f[3]) + '</button>'; }).join('') + '</div>' +
       '<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0">' + FACEFX.map(function (f) { return '<button class="sbtn' + (SEL.fx[f[0]] ? ' p' : '') + '" data-cx="' + f[0] + '" style="flex:none;min-height:46px;font-size:22px;padding:0 10px">' + f[1] + '</button>'; }).join('') + '</div><p class="note" id="cnote"></p>' + CL.footer();
@@ -326,13 +326,15 @@ window.CLifeInit12 = function (CL) {
   function startCam() {
     stopCam();
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camFallback(); return; }
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: ST.facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }).then(function (stream) {
+    var ask = (SP() && SP().camRequest) ? SP().camRequest().catch(function () { return { granted: true }; }) : Promise.resolve({ granted: true });
+    clearTimeout(ST.camT); ST.camT = setTimeout(function () { if (ST.mode === 'cam' && (!ST.cam || !ST.cam.v.videoWidth)) { var s = $('#cst'); if (s) s.style.display = 'none'; camFallback(); } }, 7000);
+    ask.then(function (r) { if (r && r.granted === false) throw new Error('denied'); return navigator.mediaDevices.getUserMedia({ video: { facingMode: ST.facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }).then(function (stream) {
       if (ST.mode !== 'cam') { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
       var v = document.createElement('video'); v.playsInline = true; v.muted = true; v.srcObject = stream; v.play().catch(function () {});
       ST.cam = { stream: stream, v: v, faces: [], t: 0, busy: false }; camLoop();
     }).catch(function () { camFallback(); });
   }
-  function camFallback() { var n = $('#cnote'); if (n) n.innerHTML = tt('کیمرے کی اجازت نہیں ملی۔ ', 'Camera permission was not granted. ') + '<button class="sbtn" id="csys" style="min-height:38px">' + tt('سسٹم کیمرہ استعمال کریں', 'Use system camera') + '</button>'; var b = $('#csys'); if (b) b.onclick = function () { var i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.setAttribute('capture', ST.facing === 'user' ? 'user' : 'environment'); i.onchange = function () { if (i.files[0]) openFile(i.files[0]); }; i.click(); }; }
+  function camFallback() { var s = $('#cst'); if (s) s.style.display = 'none'; var n = $('#cnote'); if (n) n.innerHTML = tt('کیمرہ نہیں کھل سکا۔ فون کی سیٹنگ میں Cleanova کو کیمرے کی اجازت دیں، یا ', 'Camera could not start. Allow Camera for Cleanova in phone settings, or ') + '<button class="sbtn" id="csys" style="min-height:38px">' + tt('سسٹم کیمرہ استعمال کریں', 'Use system camera') + '</button>'; var b = $('#csys'); if (b) b.onclick = function () { var i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.setAttribute('capture', ST.facing === 'user' ? 'user' : 'environment'); i.onchange = function () { if (i.files[0]) openFile(i.files[0]); }; i.click(); }; }
   function mirrorFace(f, flip) {
     var m = function (p) { return p ? { x: flip ? 1 - p.x : p.x, y: p.y } : null; };
     var o = { x: flip ? 1 - f.x - f.w : f.x, y: f.y, w: f.w, h: f.h, roll: 0, le: m(f.le), re: m(f.re), nose: m(f.nose), lc: m(f.lc), rc: m(f.rc), mb: m(f.mb) };
@@ -345,7 +347,7 @@ window.CLifeInit12 = function (CL) {
       if (!ST.cam || ST.cam !== c || S.view !== 'studio' || ST.mode !== 'cam' || !$('#cvl')) { if (ST.cam === c) stopCam(); return; }
       var v = c.v; cv = $('#cvl');
       if (v.videoWidth) {
-        var w = 480, h = Math.round(480 * v.videoHeight / v.videoWidth); if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; cv.style.aspectRatio = w + '/' + h; }
+        var w = 480, h = Math.round(480 * v.videoHeight / v.videoWidth); if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } var st0 = $('#cst'); if (st0) st0.style.display = 'none';
         var x = cv.getContext('2d'), flip = ST.facing === 'user', f = FILTERS.filter(function (q) { return q[0] === SEL.filter; })[0];
         x.save(); if (flip) { x.translate(w, 0); x.scale(-1, 1); } x.filter = f && f[1] ? f[1] : 'none'; x.drawImage(v, 0, 0, w, h); x.restore(); x.filter = 'none';
         var any = Object.keys(SEL.fx).some(function (k) { return SEL.fx[k]; });
