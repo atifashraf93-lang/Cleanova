@@ -212,6 +212,8 @@
 
   /* ---------- navigation ---------- */
   var IC = {
+    chat: '<path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
     route: '<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H16a3.5 3.5 0 0 0 0-7H8a3.5 3.5 0 0 1 0-7h7.5"/>',
     heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
@@ -241,14 +243,14 @@
   };
   function ico(n, cls) { return '<svg class="i ' + (cls || '') + '" viewBox="0 0 24 24">' + (IC[n] || '') + '</svg>'; }
   var TABS = [
-    { id: 'life', ic: ico('home'), ur: 'ہوم', en: 'Home' }, { id: 'days', ic: ico('route'), ur: 'سفرنامہ', en: 'Travel' },
-    { id: 'health', ic: ico('heart'), ur: 'صحت', en: 'Health' }, { id: 'news', ic: ico('news'), ur: 'خبریں', en: 'News' }, { id: 'home', ic: ico('grid'), ur: 'ٹولز', en: 'Tools' }, { id: 'settings', ic: ico('sl'), ur: 'ترتیبات', en: 'Settings' }
+    { id: 'life', ic: ico('home'), ur: 'ہوم', en: 'Home' }, { id: 'chat', ic: ico('chat'), ur: 'چیٹ', en: 'Chat' },
+    { id: 'health', ic: ico('heart'), ur: 'صحت', en: 'Health' }, { id: 'news', ic: ico('news'), ur: 'خبریں', en: 'News' }, { id: 'home', ic: ico('grid'), ur: 'ٹولز', en: 'Tools' }, { id: 'days', ic: ico('route'), ur: 'سفرنامہ', en: 'Travel' }
   ];
-  var TAB_OF = { life: 'life', home: 'home', overview: 'home', dups: 'home', review: 'home', list: 'home', wa: 'home', trash: 'home', settings: 'settings', done: 'home', contacts: 'home', monitor: 'home', trips: 'days', trip: 'days', days: 'days', day: 'days' };
+  var TAB_OF = { life: 'life', home: 'home', overview: 'home', dups: 'home', review: 'home', list: 'home', wa: 'home', trash: 'home', settings: 'life', chat: 'chat', chatroom: 'chat', done: 'home', contacts: 'home', monitor: 'home', trips: 'days', trip: 'days', days: 'days', day: 'days' };
   function go(view, extra) { S.back.push({ view: S.view, review: S.review, list: S.list }); S.view = view; if (extra !== undefined) { if (view === 'review') S.review = extra; else S.list = extra; } S.limit = 150; render(); }
   function goBack() {
     if (!$('#modal').hidden) { $('#modal').hidden = true; return true; }
-    if (S.view === 'scanning') return true;
+    if (S.view === 'scanning') { S.back = []; S.view = 'home'; render(); toast('اسکین پس منظر میں چل رہا ہے', 'Scan keeps running in the background'); return true; }
     if (S.view === 'gate') { S.view = 'life'; S.back = []; render(); return true; }
     if (S.view === 'life' && !S.back.length) return false;
     var b = S.back.pop() || { view: 'life' };
@@ -269,7 +271,8 @@
   }
   function setTop(titleHtml) {
     $('#title').innerHTML = titleHtml;
-    $('#topact').innerHTML = langToggle();
+    $('#topact').innerHTML = '<button class="gearb" id="gearb" aria-label="settings">' + ico('gear') + '</button>' + langToggle();
+    var gb = document.getElementById('gearb'); if (gb) gb.onclick = function () { if (S.view !== 'settings') go('settings'); };
     [].forEach.call(document.querySelectorAll('#topact [data-l]'), function (b) {
       b.onclick = function () { var l = b.dataset.l; if (l === 'en') setPref('lang', 'en'); else if (PREF.lang === 'en') setPref('lang', 'both'); applyLook(); render(); };
     });
@@ -278,7 +281,7 @@
   function setNav(on) {
     var n = $('#nav'); n.hidden = !on; if (!on) return;
     var cur = TAB_OF[S.view];
-    n.innerHTML = (CL.navFilter ? TABS.filter(CL.navFilter) : TABS).map(function (t) { return '<button data-tab="' + t.id + '" class="' + (t.id === cur ? 'on' : '') + '"><i>' + t.ic + '</i>' + (PREF.lang === 'en' ? t.en : t.ur) + '</button>'; }).join('');
+    n.innerHTML = (CL.navFilter ? TABS.filter(CL.navFilter) : TABS).map(function (t) { return '<button data-tab="' + t.id + '" class="' + (t.id === cur ? 'on' : '') + '"><i>' + t.ic + (t.id === 'chat' && CL.chatUnread ? (function () { var u = CL.chatUnread(); return u ? '<b class="nbadge">' + (u > 9 ? '9+' : u) + '</b>' : ''; })() : '') + '</i>' + (PREF.lang === 'en' ? t.en : t.ur) + '</button>'; }).join('');
     [].forEach.call(n.querySelectorAll('[data-tab]'), function (b) {
       b.onclick = function () {
         var id = b.dataset.tab; S.back = [];
@@ -311,7 +314,7 @@
   /* on-screen back button on every inner screen (the same as the phone's back key) */
   function topBack() {
     var old = document.getElementById('tbk'); if (old) old.remove();
-    if (!S.back.length || S.view === 'gate' || S.view === 'scanning') return;
+    if (!S.back.length || S.view === 'gate') return;
     var top = document.querySelector('.top'); if (!top) return;
     var b = document.createElement('button'); b.id = 'tbk'; b.className = 'tbk'; b.setAttribute('aria-label', 'back');
     b.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="' + (PREF.lang === 'en' ? '' : 'transform:scaleX(-1)') + '"><polyline points="15 18 9 12 15 6"/></svg>';
@@ -321,7 +324,7 @@
 
   function needScan() {
     $('#body').innerHTML = '<div class="card center"><div style="font-size:50px">🔍</div><h2 style="font-size:20px">' + T('پہلے اسکین کریں', 'Scan first') + '</h2><p class="mut">' + tt('فون اسکین کرنے کے بعد یہاں نتیجہ نظر آئے گا۔', 'The result will appear here after a scan.') + '</p><button class="btn" id="scanhere">' + T('فون اسکین کریں', 'Scan my phone') + '</button></div>' + footer();
-    $('#scanhere').onclick = startScan;
+    $('#scanhere').onclick = chooseScan;
   }
 
   /* ---------- screens ---------- */
@@ -362,7 +365,7 @@
       dups: ['ایک جیسی اور ملتی جلتی', 'Exact and similar'], large: ['سب سے بڑی پہلے', 'Biggest first'], wa: ['پرانا میڈیا', 'Old media'], shots: ['عمر کے لحاظ سے', 'By age'],
       blurry: ['خود دیکھ کر چنیں', 'Review each'], junk: ['خالی فولڈر، APK', 'Empty folders, APKs'], old: ['Download کی پرانی فائلیں', 'Old downloads folder'], trash: ['واپس لانے کے لیے', 'Undo and restore'], contacts: ['ایک جیسے نمبر والے', 'Same numbers or names']
     };
-    $('#body').innerHTML = hero +
+    $('#body').innerHTML = hero + scanBanner() +
       '<button class="btn" id="scanbtn">' + T('فون اسکین کریں', 'Scan my phone') + '<small class="e">' + tt('ڈپلیکیٹ، کچرا اور بڑی فائلیں ڈھونڈیں', 'Finds duplicates, junk and big files') + '</small></button>' +
       '<div class="sec">' + tt('صفائی کے اوزار', 'CLEAN-UP TOOLS') + '</div><div class="grid">' +
       tile('dups', '🖼', 'ڈپلیکیٹ فائلیں', 'Duplicates', sub.dups, sz(dupBytes())) +
@@ -376,7 +379,7 @@
       tile('monitor', '📈', 'فون مانیٹر', 'Phone monitor', ['بیٹری، RAM، استعمال', 'Battery, RAM, usage'], '') +
       tile('days', '🧭', 'سفر کا ریکارڈ', 'Travel log', ['روزانہ، نقشہ، قدم', 'Daily, map, steps'], '') +
       tile('trash', '♻', 'ٹریش', 'Trash', sub.trash, '') + '</div>' + footer();
-    $('#scanbtn').onclick = startScan;
+    $('#scanbtn').onclick = chooseScan; wireBanner();
     [].forEach.call(document.querySelectorAll('[data-open]'), function (b) { b.onclick = function () { openTool(b.dataset.open); }; });
   }
 
@@ -398,11 +401,36 @@
     var p = S.prog || { phase: 'walk', done: 0, total: 0 }, ph = PH[p.phase] || PH.walk;
     $('#body').innerHTML = '<div class="card center"><div class="spin"></div><h2 style="font-size:20px">' + T(ph[0], ph[1]) + '</h2>' +
       '<div class="big" style="text-align:center;font-size:32px">' + p.done + (p.total ? ' / ' + p.total : '') + '</div><div class="bar"><i style="width:' + (p.total ? Math.round(p.done / p.total * 100) : 5) + '%"></i></div>' +
-      '<p class="mut" style="margin-top:12px">' + tt('اسکرین کھلی رکھیں۔ فائلیں زیادہ ہوں تو کچھ منٹ لگ سکتے ہیں۔', 'Keep the screen on. It can take a few minutes with many files.') + '</p></div>';
+      '<p class="mut" style="margin-top:12px">' + tt('آپ پیچھے جا کر دوسرا کام کر سکتے ہیں، اسکین پس منظر میں چلتا رہے گا اور مکمل ہونے پر اطلاع آئے گی۔', 'You can go back and use the phone; the scan keeps running and you get a notification when it finishes.') + '</p>' +
+      '<button class="btn o" id="scbg">' + T('پس منظر میں چلنے دیں', 'Run in background') + '</button><button class="btn o" id="sccx" style="color:var(--red)">' + T('اسکین روکیں', 'Cancel scan') + '</button></div>';
+    $('#scbg').onclick = function () { goBack(); };
+    $('#sccx').onclick = function () { try { P.scanCancel(); } catch (e) { /* ignore */ } };
+  }
+  function chooseScan() {
+    var m = $('#modal'), last = store('scanmode') || 'fast'; m.hidden = false;
+    $('#sheet').innerHTML = '<b style="font-size:18px">' + tt('کس طرح اسکین کریں؟', 'How should I scan?') + '</b>' +
+      '<button class="card" id="sc1" style="width:100%;text-align:start;margin-top:12px;border:2px solid ' + (last === 'fast' ? 'var(--acc)' : 'var(--line)') + '"><b>⚡ ' + tt('فاسٹ کلین', 'Fast clean') + '</b><small class="e" style="display:block;font-size:12.5px;line-height:1.7;color:var(--mut)">' + tt('تقریباً 1-2 منٹ۔ کیمرہ، ڈاؤن لوڈ، واٹس ایپ، اسکرین شاٹ جیسی عام جگہیں؛ ہو بہو ایک جیسی فائلیں، کچرا اور بڑی فائلیں۔', 'About 1-2 min. Common places (camera, downloads, WhatsApp, screenshots): identical files, junk and big files.') + '</small></button>' +
+      '<button class="card" id="sc2" style="width:100%;text-align:start;border:2px solid ' + (last === 'deep' ? 'var(--acc)' : 'var(--line)') + '"><b>🔬 ' + tt('تفصیلی کلین', 'Detailed clean') + '</b><small class="e" style="display:block;font-size:12.5px;line-height:1.7;color:var(--mut)">' + tt('زیادہ وقت (10 منٹ یا زیادہ)۔ پورا فون، ملتی جلتی اور دھندلی تصاویر، خالی فولڈر۔', 'Takes longer (10+ min). Whole phone, similar and blurry photos, empty folders.') + '</small></button>' +
+      '<button class="btn o" id="scx">' + tt('منسوخ', 'Cancel') + '</button>';
+    $('#sc1').onclick = function () { m.hidden = true; store('scanmode', 'fast'); startScan('fast'); };
+    $('#sc2').onclick = function () { m.hidden = true; store('scanmode', 'deep'); startScan('deep'); };
+    $('#scx').onclick = function () { m.hidden = true; };
+  }
+  function applyScan(r) { prepare(r.groups || [], r.extras); S.scanned = r.files || 1; savePotential(); }
+  function scanBanner() {
+    if (S.scanRun) { var p = S.prog || {}; return '<button class="card" id="scrun" style="width:100%;text-align:start;margin-top:12px;border-color:var(--acc)"><b>🔄 ' + tt('اسکین چل رہا ہے', 'Scan is running') + '</b><small class="e" style="display:block;color:var(--mut)">' + (p.total ? p.done + ' / ' + p.total : (p.done || '')) + ' · ' + tt('دیکھنے کے لیے ٹیپ کریں', 'tap to watch') + '</small></button>'; }
+    if (S.bgDone) return '<button class="card" id="scdn" style="width:100%;text-align:start;margin-top:12px;border-color:var(--acc)"><b>✅ ' + tt('اسکین مکمل', 'Scan finished') + '</b><small class="e" style="display:block;color:var(--mut)">' + tt('نتیجہ دیکھنے کے لیے ٹیپ کریں', 'tap to see the results') + '</small></button>';
+    return '';
+  }
+  function wireBanner() {
+    var a = $('#scrun'), b = $('#scdn');
+    if (a) a.onclick = function () { S.view = 'scanning'; S.back = []; render(); };
+    if (b) b.onclick = function () { S.bgDone = false; S.view = 'overview'; S.back = []; render(); };
   }
   var scanTick = 0;
-  function startScan() {
-    S.view = 'scanning'; S.back = []; S.prog = { phase: 'walk', done: 0, total: 0 }; render();
+  function startScan(mode) {
+    mode = mode === 'deep' ? 'deep' : 'fast';
+    S.view = 'scanning'; S.back = []; S.scanRun = true; S.bgDone = false; S.prog = { phase: 'walk', done: 0, total: 0 }; render();
     var h;
     try {
       var lr = P.addListener('progress', function (e) {
@@ -411,13 +439,29 @@
       });
       if (lr && lr.then) lr.then(function (x) { h = x; }); else h = lr;
     } catch (e) { /* progress is optional */ }
-    P.scan({ similar: PREF.similar, quality: PREF.quality, skip: PREF.protect }).then(function (r) {
+    P.scan({ mode: mode, similar: PREF.similar, quality: PREF.quality, skip: PREF.protect }).then(function (r) {
       try { if (h && h.remove) h.remove(); } catch (e) { /* ignore */ }
-      prepare(r.groups || [], r.extras); S.scanned = r.files || 1; savePotential(); S.view = 'overview'; S.back = []; render();
+      S.scanRun = false; applyScan(r);
+      if (S.view === 'scanning') { S.view = 'overview'; S.back = []; render(); }
+      else { S.bgDone = true; if (S.view === 'home') render(); toast('اسکین مکمل، نتیجہ ٹولز میں دیکھیں', 'Scan finished, see the results in Tools'); }
     }).catch(function (e) {
       try { if (h && h.remove) h.remove(); } catch (e2) { /* ignore */ }
-      S.view = 'home'; render(); toast('اسکین نہیں ہو سکا', 'Scan failed: ' + (e && e.message || e));
+      S.scanRun = false; if (S.view === 'scanning') S.view = 'home'; render();
+      if (e && /cancel/i.test(e.message || '')) toast('اسکین روک دیا', 'Scan cancelled'); else toast('اسکین نہیں ہو سکا', 'Scan failed: ' + (e && e.message || e));
     });
+  }
+  /* the app was closed while a scan ran: pick the scan up again */
+  function resumeScan() {
+    try {
+      P.scanStatus().then(function (st) {
+        if (!st) return;
+        var take = function () { P.scanTake().then(function (r) { if (r && r.groups) { applyScan(r); S.bgDone = true; S.scanRun = false; if (S.view === 'home') render(); } }).catch(function () { /* ignore */ }); };
+        if (st.running && !S.scanRun) {
+          S.scanRun = true; S.prog = { phase: st.phase, done: st.done, total: st.total };
+          var iv = setInterval(function () { P.scanStatus().then(function (x) { S.prog = { phase: x.phase, done: x.done, total: x.total }; if (S.view === 'scanning') vScan(); if (!x.running) { clearInterval(iv); S.scanRun = false; take(); } }).catch(function () { clearInterval(iv); }); }, 1000);
+        } else if (st.hasResult && !S.scanRun) take();
+      }).catch(function () { /* old plugin */ });
+    } catch (e) { /* ignore */ }
   }
 
   /* duplicates overview (categories) */
@@ -633,8 +677,10 @@
       '<div class="card center"><div class="logo" style="margin:0 auto 8px;width:56px;height:56px;border-radius:17px;font-size:26px">✦</div><b style="font-size:19px;font-family:system-ui">Cleanova Life</b><div class="mut" style="font-family:system-ui;font-size:12.5px;line-height:1.8;margin-top:4px">Version 2.0 · ' + tt('مفت · اشتہارات نہیں', 'Free · No ads') + '<br>' + tt('سارا اسکین آپ کے فون میں ہی ہوتا ہے', 'All scanning stays on your phone') + '<br><span style="color:var(--acc);font-weight:700">Developed by SMAA</span></div></div>' +
       '<div class="card"><button class="cat" id="prbtn" style="padding:6px 0"><span class="t"><b>' + tt('پرائیویسی، لاک اور ڈسپلے', 'Privacy, lock and display') + '</b><small class="e" style="display:block">' + tt('پن، فنگر پرنٹ، بڑے حروف', 'PIN, fingerprint, large text') + '</small></span><span>›</span></button></div>' +
       '<div class="card"><button class="cat" id="bkbtn" style="padding:6px 0"><span class="t"><b>' + tt('بیک اپ اور بحالی', 'Backup and restore') + '</b><small class="e" style="display:block">' + tt('صحت، خرچ، یاد دہانیاں محفوظ کریں', 'Save health, expenses, reminders') + '</small></span><span>›</span></button></div>' +
-      '<div class="card"><div class="mut">' + tt('اب تک کل صفائی', 'Total cleaned so far') + '</div><div class="big">' + fmt(store('freed') || 0) + '</div></div>';
+      '<div class="card"><div class="mut">' + tt('اب تک کل صفائی', 'Total cleaned so far') + '</div><div class="big">' + fmt(store('freed') || 0) + '</div></div>' +
+      '<div class="card"><button class="cat" id="dgbtn" style="padding:6px 0"><span class="t"><b>🩺 ' + tt('سیٹ اپ اور ہیلتھ چیک', 'Setup and health check') + '</b><small class="e" style="display:block">' + tt('نوٹیفکیشن، بیٹری، کنکشن اور ورژن چیک کریں', 'Check notifications, battery, connection and version') + '</small></span></button></div>';
     $('#body').innerHTML = h;
+    $('#dgbtn').onclick = function () { go('diag'); };
     [].forEach.call(document.querySelectorAll('[data-pref]'), function (b) {
       b.onclick = function () {
         var k = b.dataset.pref, v = b.dataset.v; v = isNaN(+v) ? v : +v;
@@ -1136,4 +1182,6 @@
   window.cleanovaTest = { S: S, PREF: PREF, render: render, prepare: prepare, go: go };
   applyLook();
   refreshStatus();
+  setTimeout(resumeScan, 1500);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) resumeScan(); });
 })();

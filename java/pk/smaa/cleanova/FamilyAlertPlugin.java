@@ -71,4 +71,100 @@ public class FamilyAlertPlugin extends Plugin {
             call.resolve();
         } catch (Throwable t) { call.reject("chat setup failed: " + t); }
     }
+
+    /** Which chat room a tapped notification wants opened (and clears it). */
+    @PluginMethod
+    public void takeOpenRoom(PluginCall call) {
+        android.content.SharedPreferences sp = getContext().getSharedPreferences(ChatCheck.PREFS, Context.MODE_PRIVATE);
+        String r = sp.getString("open", ""); if (r.length() > 0) sp.edit().remove("open").apply();
+        JSObject o = new JSObject(); o.put("room", r); call.resolve(o);
+    }
+
+    /** What the phone allows right now, so the in-app checklist can show ticks and crosses. */
+    @PluginMethod
+    public void diag(PluginCall call) {
+        Context c = getContext();
+        JSObject o = new JSObject();
+        try {
+            o.put("notif", android.os.Build.VERSION.SDK_INT >= 24 ? ((android.app.NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE)).areNotificationsEnabled() : true);
+            android.os.PowerManager pm = (android.os.PowerManager) c.getSystemService(Context.POWER_SERVICE);
+            o.put("battery", android.os.Build.VERSION.SDK_INT >= 23 ? pm.isIgnoringBatteryOptimizations(c.getPackageName()) : true);
+            o.put("brand", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
+            o.put("sdk", android.os.Build.VERSION.SDK_INT);
+            android.content.SharedPreferences sp = c.getSharedPreferences(ChatCheck.PREFS, Context.MODE_PRIVATE);
+            o.put("lastRun", sp.getLong("lastRun", 0)); o.put("err", sp.getString("err", ""));
+            o.put("fast", sp.getBoolean("fast", false));
+            o.put("uid", new Fs(c).uid());
+        } catch (Throwable t) { o.put("err", String.valueOf(t)); }
+        call.resolve(o);
+    }
+
+    /** Asks Android to stop limiting this app's background work (the system shows its own prompt). */
+    @PluginMethod
+    public void batteryAsk(PluginCall call) {
+        Context c = getContext();
+        try {
+            android.content.Intent i = new android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + c.getPackageName()));
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK); c.startActivity(i);
+        } catch (Throwable t) {
+            try { android.content.Intent i = new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + c.getPackageName())); i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK); c.startActivity(i); } catch (Throwable t2) { /* ignore */ }
+        }
+        call.resolve();
+    }
+
+    /** Opens the phone maker's own "auto-start" page when it has one, otherwise the app's settings page. */
+    @PluginMethod
+    public void autoStart(PluginCall call) {
+        Context c = getContext();
+        String[][] tries = {
+            { "com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity" },
+            { "com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity" },
+            { "com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity" },
+            { "com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity" },
+            { "com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity" },
+            { "com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity" },
+            { "com.transsion.phonemaster", "com.cyin.himgr.autostart.AutoStartActivity" },
+            { "com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity" }
+        };
+        boolean ok = false;
+        for (String[] t : tries) {
+            try { android.content.Intent i = new android.content.Intent(); i.setClassName(t[0], t[1]); i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK); c.startActivity(i); ok = true; break; } catch (Throwable e) { /* try the next maker */ }
+        }
+        if (!ok) {
+            try { android.content.Intent i = new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + c.getPackageName())); i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK); c.startActivity(i); } catch (Throwable t2) { /* ignore */ }
+        }
+        JSObject o = new JSObject(); o.put("maker", ok); call.resolve(o);
+    }
+
+    /** Chat identity (anonymous account) so a restored backup keeps the same rooms. */
+    @PluginMethod
+    public void idGet(PluginCall call) {
+        Fs fs = new Fs(getContext()); JSObject o = new JSObject(); o.put("uid", fs.uid()); o.put("rt", fs.refreshToken()); call.resolve(o);
+    }
+
+    @PluginMethod
+    public void idSet(PluginCall call) {
+        try {
+            android.content.SharedPreferences sp = getContext().getSharedPreferences("cl.fsauth", Context.MODE_PRIVATE);
+            if (sp.getString("rt", "").length() == 0 && call.getString("rt", "").length() > 10 && call.getString("uid", "").length() > 5)
+                sp.edit().putString("rt", call.getString("rt")).putString("uid", call.getString("uid")).putString("idt", "").putLong("exp", 0).apply();
+            call.resolve();
+        } catch (Throwable t) { call.reject("id failed"); }
+    }
+
+    /** The app tells us it is on screen, so the background check does not show a notification for what the user can already see. */
+    @PluginMethod
+    public void chatFg(PluginCall call) {
+        getContext().getSharedPreferences(ChatCheck.PREFS, Context.MODE_PRIVATE).edit().putLong("fgTs", call.getBoolean("on", false) ? System.currentTimeMillis() : 0).apply();
+        call.resolve();
+    }
+
+    /** Messages up to this time were read inside the app. */
+    @PluginMethod
+    public void chatRead(PluginCall call) {
+        String code = call.getString("code", ""); long ts = call.getLong("ts", 0L);
+        android.content.SharedPreferences sp = getContext().getSharedPreferences(ChatCheck.PREFS, Context.MODE_PRIVATE);
+        if (code.length() > 0 && ts > sp.getLong("seen_" + code, 0)) sp.edit().putLong("seen_" + code, ts).apply();
+        call.resolve();
+    }
 }

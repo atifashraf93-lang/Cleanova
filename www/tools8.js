@@ -40,7 +40,22 @@ window.CLifeInit13 = function (CL) {
   function money(n) { return 'Rs ' + (Math.round(n * 100) / 100).toLocaleString('en-US'); }
 
   /* ---------- Firestore over REST ---------- */
-  function auth() { var p = FA(); if (!p) return Promise.reject(new Error('plugin')); return p.token(); }
+  var idSaved = false;
+  var idReady = (function () {
+    var p = FA(); if (!p || !p.idGet) return Promise.resolve();
+    return p.idGet().then(function (r) {
+      var saved = null; try { saved = JSON.parse(localStorage.getItem('cleanova.life.chatid') || 'null'); } catch (e) { /* ignore */ }
+      if (r && r.rt) { idSaved = true; try { localStorage.setItem('cleanova.life.chatid', JSON.stringify({ uid: r.uid, rt: r.rt })); } catch (e) { /* ignore */ } }
+      else if (saved && saved.rt && p.idSet) return p.idSet(saved);
+    }).catch(function () { /* ignore */ });
+  })();
+  function auth() {
+    var p = FA(); if (!p) return Promise.reject(new Error('plugin'));
+    return idReady.then(function () { return p.token(); }).then(function (a) {
+      if (!idSaved && p.idGet) { idSaved = true; p.idGet().then(function (r) { try { if (r && r.rt) localStorage.setItem('cleanova.life.chatid', JSON.stringify({ uid: r.uid, rt: r.rt })); } catch (e) { /* ignore */ } }).catch(function () {}); }
+      return a;
+    });
+  }
   function enc(v) { return typeof v === 'string' ? { stringValue: v } : typeof v === 'boolean' ? { booleanValue: v } : (v % 1 === 0 ? { integerValue: String(v) } : { doubleValue: v }); }
   function dec(doc) {
     var o = {}, f = (doc && doc.fields) || {};
@@ -169,6 +184,84 @@ window.CLifeInit13 = function (CL) {
   function shareText(t) { if (navigator.share) navigator.share({ text: t }).catch(function () {}); else { try { navigator.clipboard.writeText(t); } catch (e) { /* ignore */ } CL.toast('کاپی ہو گیا', 'Copied'); } }
   function inviteText(code, name) { return tt('💬 "' + name + '" چیٹ روم میں شامل ہوں:\nCleanova Life ایپ کھولیں ← چیٹ رومز ← کوڈ سے شامل ہوں\nکوڈ: ', '💬 Join the "' + name + '" chat room:\nOpen Cleanova Life → Chat rooms → Join with code\nCode: ') + code; }
 
+  /* ---------- unread, previews, badge ---------- */
+  function cache() { return lget('chcache', {}); }
+  function cset(c) { lset('chcache', c); }
+  function prevText(m) {
+    var k = m.k || 'text';
+    return k === 'img' ? '📷 ' + tt('تصویر', 'Photo') : k === 'voice' ? '🎤 ' + tt('آواز', 'Voice note') : k === 'loc' ? '📍 ' + tt('لوکیشن', 'Location') : k === 'poll' ? '📊 ' + (m.t || '') : k === 'event' ? '📅 ' + (m.t || '') : k === 'list' ? '✅ ' + (m.t || '') : k === 'exp' ? '💸 ' + (m.t || '') : String(m.t || '');
+  }
+  function unreadTotal() { var c = cache(), n = 0; Object.keys(c).forEach(function (k) { n += c[k].u || 0; }); return n; }
+  CL.chatUnread = function () { try { return C().rooms.length ? unreadTotal() : 0; } catch (e) { return 0; } };
+  function updateBadge() {
+    var b = document.querySelector('#nav [data-tab="chat"] i'); if (!b) return;
+    var o = b.querySelector('.nbadge'), u = CL.chatUnread();
+    if (!u) { if (o) o.remove(); return; }
+    if (!o) { o = document.createElement('b'); o.className = 'nbadge'; b.appendChild(o); }
+    o.textContent = u > 9 ? '9+' : u;
+  }
+  CL.updateBadge = updateBadge;
+  function markRead(code, ts) {
+    var c = cache(), r = c[code] || (c[code] = {}); if ((r.read || 0) >= ts && !r.u) return;
+    r.read = Math.max(r.read || 0, ts); r.u = 0; cset(c); updateBadge();
+    var p = FA(); if (p && p.chatRead) p.chatRead({ code: code, ts: ts }).catch(function () {});
+  }
+  var RF = { busy: false, t: 0 };
+  function refreshRooms() {
+    var rooms = C().rooms; if (!rooms.length || RF.busy || document.hidden) return Promise.resolve();
+    if (Date.now() - RF.t < 20000) return Promise.resolve();
+    RF.busy = true; RF.t = Date.now();
+    return myUid().then(function (uid) {
+      return Promise.all(rooms.slice(0, 12).map(function (r) {
+        if (R && R.code === r.code && S.view === 'chatroom') return null;
+        return query('rooms/' + r.code, 'msgs', 'ts', null, 0, 'DESCENDING', 15).then(function (ms) {
+          var c = cache(), o = c[r.code] || (c[r.code] = {});
+          if (o.read === undefined) o.read = Date.now();
+          var vis = ms.filter(function (m) { return m.k !== 'sys'; }), last = vis[0];
+          o.u = ms.filter(function (m) { return m.ts > o.read && m.uid !== uid && m.k !== 'sys'; }).length;
+          if (last) { o.ts = last.ts; o.n = last.n; o.t = prevText(last); o.mine = last.uid === uid; }
+          cset(c);
+        }).catch(function () {});
+      }));
+    }).catch(function () {}).then(function () {
+      RF.busy = false; updateBadge();
+      if (S.view === 'chat') vChat(true); else if (S.view === 'life' && CL.views.life) { try { CL.views.life(true); } catch (e) { /* ignore */ } }
+    });
+  }
+  CL.chatRefresh = function (force) { if (force) RF.t = 0; return refreshRooms(); };
+  setInterval(function () { if (!document.hidden && S.view !== 'chatroom') refreshRooms(); }, 60000);
+  function fgPing() { var p = FA(); if (p && p.chatFg) p.chatFg({ on: !document.hidden }).catch(function () {}); }
+  setInterval(fgPing, 20000); document.addEventListener('visibilitychange', fgPing);
+  setTimeout(function () {
+    fgPing(); refreshRooms(); takeOpen();
+    var c = C();
+    if (c.rooms.length) { if (c.fast === undefined) { c.fast = true; save(c); } sync(); if (!c.wiz) { c.wiz = 1; save(c); setTimeout(function () { if (CL.setupWizard) CL.setupWizard(); }, 2500); } }
+  }, 2500);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { refreshRooms(); takeOpen(); } });
+  function takeOpen() {
+    var p = FA(); if (!p || !p.takeOpenRoom) return;
+    p.takeOpenRoom().then(function (r) {
+      if (r && r.room && C().rooms.some(function (x) { return x.code === r.room; }) && !(R && R.code === r.room && S.view === 'chatroom')) { S.back = []; S.view = 'chat'; CL.render(); openRoom(r.room); }
+    }).catch(function () {});
+  }
+  function homeCard() {
+    var c = C(), cc = cache();
+    if (!c.rooms.length) {
+      if (lget('chhide', 0)) return '';
+      return '<div class="card" id="chhc" style="background:linear-gradient(135deg,#312e81,#4c1d95);border:0;color:#fff;display:flex;gap:12px;align-items:center"><span style="font-size:30px">💬</span><div style="flex:1"><b>' + tt('چیٹ روم بنائیں', 'Start a chat room') + '</b><small style="display:block;opacity:.8;font-size:12.5px">' + tt('کوڈ سے خاندان اور دوست جڑیں', 'Family and friends join with a code') + '</small></div><button class="sbtn" id="chhx" style="background:rgba(255,255,255,.18);border:0;color:#fff;min-width:40px">✕</button></div>';
+    }
+    var tot = unreadTotal(), best = null; c.rooms.forEach(function (r) { var o = cc[r.code]; if (o && o.ts && (!best || o.ts > best.o.ts)) best = { r: r, o: o }; });
+    return '<div class="card" id="chhc" style="background:linear-gradient(135deg,#312e81,#4c1d95);border:0;color:#fff;display:flex;gap:12px;align-items:center;cursor:pointer"><span style="font-size:30px;position:relative">💬' + (tot ? '<b class="nbadge" style="top:-4px;inset-inline-end:-8px">' + (tot > 9 ? '9+' : tot) + '</b>' : '') + '</span><div style="flex:1;min-width:0"><b>' + (tot ? tot + ' ' + tt('نئے میسج', 'new messages') : tt('چیٹ رومز', 'Chat rooms')) + '</b><small style="display:block;opacity:.85;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (best ? esc(best.r.name) + ': ' + esc((best.o.mine ? tt('آپ: ', 'You: ') : (best.o.n ? best.o.n + ': ' : '')) + (best.o.t || '')) : tt('کھولنے کے لیے ٹیپ کریں', 'Tap to open')) + '</small></div><span style="opacity:.7">›</span></div>';
+  }
+  (CL.homeHooks = CL.homeHooks || []).push(function () {
+    var old = document.getElementById('chhc'); if (old) old.remove();
+    var h = homeCard(); if (!h || S.view !== 'life') return;
+    var g = document.querySelector('#body .lgreet');
+    if (g) g.insertAdjacentHTML('afterend', h); else return;
+    var el = document.getElementById('chhc');
+    if (el) el.onclick = function (e) { if (e.target.id === 'chhx') { lset('chhide', 1); el.remove(); return; } S.back = []; S.view = 'chat'; CL.render(); };
+  });
+
   /* ---------- room list ---------- */
   var LST = { info: {}, tm: 0 };
   function privacySheet(after) {
@@ -184,33 +277,38 @@ window.CLifeInit13 = function (CL) {
     [].forEach.call(document.querySelectorAll('[data-av]'), function (b) { b.onclick = function () { av = b.dataset.av; [].forEach.call(document.querySelectorAll('[data-av]'), function (x) { x.className = 'sbtn' + (x === b ? ' p' : ''); }); }; });
     $('#chnok').onclick = function () { var n = $('#chn').value.trim(); if (!n) { CL.toast('نام لکھیں', 'Enter a name'); return; } c.name = n; c.av = av; save(c); closeSheet(); cb(); };
   }
-  function vChat() {
-    css(); CL.setTop(T('چیٹ رومز', 'Chat rooms')); clearInterval(LST.tm);
+  function vChat(soft) {
+    css(); CL.setTop(T('چیٹ رومز', 'Chat rooms')); clearInterval(LST.tm); if (!soft) refreshRooms();
     var c = C();
     var h = '<div class="card" style="margin-top:8px;background:linear-gradient(145deg,#312e81,#4c1d95);border:0;color:#fff"><div style="display:flex;align-items:center;gap:12px"><span style="font-size:34px">💬</span><div style="flex:1"><b style="font-size:17px">' + tt('چیٹ رومز', 'Chat rooms') + '</b><small style="display:block;opacity:.8;font-size:12.5px;line-height:1.6">' + tt('اپنا روم بنائیں، کوڈ شیئر کریں، دوست اور رشتہ دار شامل ہوں', 'Make a room, share the code, friends and family join') + '</small></div><button class="sbtn" id="chst" style="min-width:44px;background:rgba(255,255,255,.15);border:0;color:#fff">⚙️</button></div>' +
       '<div style="display:flex;gap:8px;margin-top:12px"><button class="sbtn p" id="chnew" style="flex:1;justify-content:center">➕ ' + tt('نیا روم', 'New room') + '</button><button class="sbtn" id="chjn" style="flex:1;justify-content:center;background:rgba(255,255,255,.15);border:0;color:#fff">🔑 ' + tt('کوڈ سے شامل ہوں', 'Join with code') + '</button></div></div>';
     if (!c.rooms.length) h += '<div class="card center"><p class="mut" style="line-height:1.8">' + tt('ابھی کوئی روم نہیں۔ "نیا روم" سے اپنا روم بنائیں یا کسی کا بھیجا ہوا کوڈ ڈال کر شامل ہوں۔', 'No rooms yet. Make one with "New room" or join with a code someone sent you.') + '</p></div>';
-    h += c.rooms.map(function (r) {
-      var t = th(r.th || 0), i = LST.info[r.code] || {}, tag = i.gone ? tt('ختم', 'gone') : i.wait ? tt('منظوری کا انتظار', 'awaiting approval') : i.closed ? tt('بند', 'closed') : r.admin ? tt('آپ منتظم ہیں', 'You are admin') : '';
-      return '<div class="chrm" data-room="' + r.code + '" style="background:' + t.bg + '"><div class="cav" style="background:linear-gradient(135deg,' + t.a + ',' + t.b + ')">' + esc((r.name || '?').charAt(0).toUpperCase()) + '</div><div style="flex:1;min-width:0"><b>' + esc(r.name) + '</b><small dir="ltr">' + esc(r.code) + (tag ? ' · ' + tag : '') + '</small></div>' + ((c.mut || []).indexOf(r.code) >= 0 ? '<span>🔕</span>' : '') + '<span style="opacity:.7">›</span></div>';
+    var cc = cache();
+    h += c.rooms.slice().sort(function (x, y) { return ((cc[y.code] || {}).ts || 0) - ((cc[x.code] || {}).ts || 0); }).map(function (r) {
+      var t = th(r.th || 0), i = LST.info[r.code] || {}, o = cc[r.code] || {}, tag = i.gone ? tt('ختم', 'gone') : i.wait ? tt('منظوری کا انتظار', 'awaiting approval') : i.closed ? tt('بند', 'closed') : '';
+      var line = tag || (o.t ? esc((o.mine ? tt('آپ: ', 'You: ') : (o.n ? o.n + ': ' : '')) + o.t) : (r.admin ? tt('آپ منتظم ہیں', 'You are admin') : tt('ابھی کوئی میسج نہیں', 'No messages yet')));
+      return '<div class="chrm" data-room="' + r.code + '" style="background:' + t.bg + '"><div class="cav" style="background:linear-gradient(135deg,' + t.a + ',' + t.b + ')">' + esc((r.name || '?').charAt(0).toUpperCase()) + '</div><div style="flex:1;min-width:0"><div style="display:flex;gap:8px;align-items:baseline"><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.name) + ((c.mut || []).indexOf(r.code) >= 0 ? ' 🔕' : '') + '</b>' + (o.ts ? '<small style="opacity:.7;font-size:11px;display:inline">' + (Date.now() - o.ts < 864e5 ? hm(o.ts) : dayLabel(o.ts)) + '</small>' : '') + '</div><small class="chln" style="display:block;opacity:.8;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + (o.u ? 'font-weight:700;opacity:1' : '') + '">' + line + '</small></div>' + (o.u ? '<b class="nbadge" style="position:static;background:#f43f5e;flex:none">' + (o.u > 9 ? '9+' : o.u) + '</b>' : '<span style="opacity:.7">›</span>') + '</div>';
     }).join('');
     h += '<p class="note">' + tt('🔒 یہ چیٹ اینڈ ٹو اینڈ انکرپٹڈ نہیں؛ حساس معلومات نہ بھیجیں۔', '🔒 Not end-to-end encrypted; do not send sensitive info.') + '</p>' + CL.footer();
     $('#body').innerHTML = h;
     $('#chst').onclick = settings; $('#chnew').onclick = function () { gate(newSheet); }; $('#chjn').onclick = function () { gate(joinSheet); };
     [].forEach.call(document.querySelectorAll('[data-room]'), function (b) { b.onclick = function () { openRoom(b.dataset.room); }; });
     /* status of each room (a couple of small reads) */
-    myUid().then(function (uid) {
+    if (!soft) myUid().then(function (uid) {
       c.rooms.forEach(function (r) {
         Promise.all([api('GET', 'rooms/' + r.code), api('GET', 'rooms/' + r.code + '/members/' + uid).catch(function () { return null; })]).then(function (x) {
           var rm = dec(x[0]), me = x[1] ? dec(x[1]) : null; LST.info[r.code] = { closed: rm.closed === true, wait: !!(me && !me.ok) };
-          if (S.view === 'chat') { var el = document.querySelector('[data-room="' + r.code + '"] small'); if (el) { var i = LST.info[r.code]; el.innerHTML = esc(r.code) + (i.wait ? ' · ' + tt('منظوری کا انتظار', 'awaiting approval') : i.closed ? ' · ' + tt('بند', 'closed') : r.admin ? ' · ' + tt('آپ منتظم ہیں', 'You are admin') : ''); } }
+          if (S.view === 'chat') { var el = document.querySelector('[data-room="' + r.code + '"] .chln'), i = LST.info[r.code]; if (el && (i.wait || i.closed)) el.textContent = i.wait ? tt('منظوری کا انتظار', 'awaiting approval') : tt('بند', 'closed'); }
         }).catch(function (e) { if (e && e.status === 404) { LST.info[r.code] = { gone: true }; } });
       });
     }).catch(function () {});
   }
   function gate(fn) { var c = C(); if (!c.ok) privacySheet(function () { ensureName(fn); }); else ensureName(fn); }
   function addRoom(code, name, admin, themeIdx) {
-    var c = C(); if (!c.rooms.some(function (r) { return r.code === code; })) c.rooms.push({ code: code, name: name, admin: !!admin, th: themeIdx || 0 }); save(c); sync(); notifPerm();
+    var c = C(); if (!c.rooms.some(function (r) { return r.code === code; })) { c.rooms.push({ code: code, name: name, admin: !!admin, th: themeIdx || 0 }); var cc = cache(); cc[code] = { read: Date.now(), u: 0 }; cset(cc); }
+    if (c.fast === undefined) c.fast = true;
+    save(c); sync(); notifPerm();
+    if (!c.wiz) { c.wiz = 1; save(c); setTimeout(function () { if (CL.setupWizard) CL.setupWizard(); }, 1200); }
   }
   function newSheet() {
     var sel = 0;
@@ -328,7 +426,10 @@ window.CLifeInit13 = function (CL) {
     }
     $('#chc').hidden = false; wireComposer(); head();
     paint(true);
-    clearInterval(R.tm); R.tm = setInterval(tick, 4000);
+    R.act = Date.now(); markRead(R.code, R.lastTs);
+    var chw = $('#chw'); if (chw) { var poke = function () { R.act = Date.now(); }; chw.addEventListener('touchstart', poke, { passive: true }); chw.addEventListener('click', poke); chw.addEventListener('input', poke); }
+    clearInterval(R.tm);
+    (function loop() { if (!R || S.view !== 'chatroom') return; var idle = Date.now() - (R.act || 0), d = idle < 60000 ? 4000 : idle < 300000 ? 10000 : 20000; R.tm = setTimeout(function () { tick(); loop(); }, d); })();
     beat(true);
   }
   function dropLocal() { var c = C(); c.rooms = c.rooms.filter(function (r) { return r.code !== R.code; }); save(c); sync(); }
@@ -352,7 +453,7 @@ window.CLifeInit13 = function (CL) {
     jobs.push(query(P, 'msgs', 'ts', 'GREATER_THAN', Math.max(0, R.lastTs - 10000), 'ASCENDING', 60).then(function (ms) {
       var fresh = 0, others = 0; ms.forEach(function (m) { if (addMsg(m)) { fresh++; if (m.uid !== R.uid) others++; } });
       R.msgs.sort(function (a, b) { return a.ts - b.ts; });
-      if (fresh) { paint(); if (others) { var now = Date.now(); if (now - R.seenAt > 4000) { R.seenAt = now; api('PATCH', P + '/members/' + R.uid, { seen: now }).catch(function () {}); } } }
+      if (fresh) { paint(); markRead(R.code, R.lastTs); if (others) { R.act = Date.now(); var now = Date.now(); if (now - R.seenAt > 4000) { R.seenAt = now; api('PATCH', P + '/members/' + R.uid, { seen: now }).catch(function () {}); } } }
     }));
     if (R.n % 2 === 0) jobs.push(query(P, 'acts', 'ts', 'GREATER_THAN', Math.max(0, R.lastAct - 10000), 'ASCENDING', 100).then(function (as) {
       var ch = false; as.forEach(function (a) { var o = R.acts[a._id]; if (!o || o.ts !== a.ts || o.v !== a.v) { R.acts[a._id] = a; ch = true; } R.lastAct = Math.max(R.lastAct, a.ts || 0); });
@@ -446,7 +547,7 @@ window.CLifeInit13 = function (CL) {
     if (R.room.closed) { CL.toast('روم بند ہے', 'Room is closed'); return Promise.resolve(); }
     var m = { _id: rid(), uid: R.uid, n: C().name || '?', k: k, t: String(t || '').slice(0, 2000), d: d || '', rp: R.reply ? R.reply.rp : '', ri: R.reply ? R.reply.id : '', ts: Date.now(), _p: 1 };
     var o = {}; ['uid', 'n', 'k', 't', 'd', 'rp', 'ri', 'ts'].forEach(function (x) { o[x] = m[x]; });
-    R.by[m._id] = m; R.msgs.push(m); setReply(null); paint(true);
+    R.by[m._id] = m; R.msgs.push(m); R.act = Date.now(); setReply(null); paint(true);
     return api('PATCH', 'rooms/' + R.code + '/msgs/' + m._id, o).then(function () { delete m._p; paint(); }).catch(function (e) { delete m._p; m._f = 1; paint(); failMsg(e); });
   }
   function setReply(r) {

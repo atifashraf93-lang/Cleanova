@@ -153,18 +153,30 @@ public class CleanovaPlugin extends Plugin {
     public void scan(final PluginCall call) {
         if (!hasAccess()) { call.reject("no access"); return; }
         if (scanning) { call.reject("busy"); return; }
-        final boolean wantSimilar = call.getBoolean("similar", true);
-        final boolean wantQuality = call.getBoolean("quality", true);
+        final boolean fast = "fast".equals(call.getString("mode", "deep"));
+        final boolean wantSimilar = !fast && call.getBoolean("similar", true);
+        final boolean wantQuality = !fast && call.getBoolean("quality", true);
         final List<String> skip = strings(call.getArray("skip"));
         scanning = true;
+        final android.content.Context ctx = getContext().getApplicationContext();
+        ScanService.begin(ctx);
         new Thread(new Runnable() {
             public void run() {
                 try {
                     DupEngine.Progress p = new DupEngine.Progress() {
-                        public void on(String phase, int done, int total) { progress(phase, done, total); }
+                        public void on(String phase, int done, int total) {
+                            if (ScanService.cancel) throw new ScanService.Cancelled();
+                            ScanService.update(ctx, phase, done, total);
+                            progress(phase, done, total);
+                        }
                     };
                     List<String> emptyDirs = new ArrayList<String>();
-                    List<Item> items = DupEngine.walk(root(), p, skip, emptyDirs);
+                    List<Item> items;
+                    if (fast) {
+                        items = new ArrayList<Item>();
+                        String[] dirs = { "DCIM", "Pictures", "Download", "Documents", "Movies", "WhatsApp", "Android/media", "Telegram", "Snapchat", "Bluetooth" };
+                        for (String d : dirs) { File f = new File(root(), d); if (f.isDirectory()) items.addAll(DupEngine.walk(f, p, skip, null)); }
+                    } else items = DupEngine.walk(root(), p, skip, emptyDirs);
                     List<Group> exact = DupEngine.exact(items, p);
                     List<Group> sim = new ArrayList<Group>();
                     if (wantSimilar) {
@@ -202,14 +214,35 @@ public class CleanovaPlugin extends Plugin {
                     res.put("files", items.size());
                     res.put("extras", extras);
                     scanning = false;
+                    ScanService.result = res;
+                    ScanService.end(ctx, groups.length() + " groups found in " + items.size() + " files. Tap to see the results.");
                     call.resolve(res);
                 } catch (Throwable t) {
                     scanning = false;
-                    call.reject("scan failed: " + t);
+                    boolean cc = t instanceof ScanService.Cancelled;
+                    ScanService.end(ctx, null);
+                    call.reject(cc ? "cancelled" : "scan failed: " + t);
                 }
             }
         }).start();
     }
+
+    @PluginMethod
+    public void scanStatus(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("running", ScanService.running); r.put("phase", ScanService.phase); r.put("done", ScanService.done); r.put("total", ScanService.total);
+        r.put("hasResult", ScanService.result != null);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void scanTake(PluginCall call) {
+        JSObject r = ScanService.result; ScanService.result = null;
+        call.resolve(r == null ? new JSObject() : r);
+    }
+
+    @PluginMethod
+    public void scanCancel(PluginCall call) { ScanService.cancel = true; call.resolve(); }
 
     private JSArray itemsJson(List<Item> l) {
         JSArray arr = new JSArray();

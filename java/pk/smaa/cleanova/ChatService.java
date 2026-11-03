@@ -26,7 +26,7 @@ public class ChatService extends Service {
             run = true;
             new Thread(new Runnable() { @Override public void run() {
                 while (run) {
-                    try { ChatCheck.run(ChatService.this); } catch (Throwable t) { /* offline: try again */ }
+                    try { ChatCheck.run(ChatService.this); } catch (Throwable t) { getSharedPreferences(ChatCheck.PREFS, MODE_PRIVATE).edit().putString("err", String.valueOf(t)).apply(); }
                     try { Thread.sleep(20000); } catch (InterruptedException e) { break; }
                 }
             } }).start();
