@@ -74,7 +74,7 @@ window.CLifeInit14 = function (CL) {
       if (d) h += '<p class="note">📱 ' + esc(d.brand || '') + ' · Android ' + (d.sdk || '') + '</p>';
       $('#body').innerHTML = h + CL.footer();
       fixes(d); $('#dgt').onclick = testNotif;
-      if ($('#dgu')) $('#dgu').onclick = function () { if (u && u.url) CL.openUrl(u.url); };
+      if ($('#dgu')) $('#dgu').onclick = function () { if (u && CL.doUpdate) CL.doUpdate(u); else if (u && u.url) CL.openUrl(u.url); };
     });
   }
   V.diag = vDiag;
@@ -85,17 +85,23 @@ window.CLifeInit14 = function (CL) {
     if (!force && last && Date.now() - last.t < 6 * 3600000) return Promise.resolve(last);
     return fetch(REPO).then(function (r) { return r.json(); }).then(function (rs) {
       var best = null;
-      (rs || []).forEach(function (x) { var m = /^apk-(\d+)$/.exec(x.tag_name || ''); if (m && x.assets && x.assets[0] && (!best || +m[1] > best.n)) best = { n: +m[1], url: x.assets[0].browser_download_url, t: Date.now() }; });
+      (rs || []).forEach(function (x) {
+        var m = /^apk-(\d+)$/.exec(x.tag_name || ''); if (!m || !x.assets || (best && +m[1] <= best.n)) return;
+        var apk = null, zip = null; x.assets.forEach(function (a) { if (/\.apk$/i.test(a.name)) apk = a.browser_download_url; else if (a.name === 'www.zip') zip = a.browser_download_url; });
+        var nd = /need=(\d+)/.exec(x.body || '');
+        if (apk) best = { n: +m[1], url: apk, zip: zip, need: nd ? +nd[1] : 1, t: Date.now() };
+      });
       if (best) lset('upd', best);
       return best;
     }).catch(function () { return last; });
   }
+  CL.checkUpd = upd;
   (CL.homeHooks = CL.homeHooks || []).push(function () {
     var old = document.getElementById('updc'); if (old) old.remove();
     var u = lget('upd', null); if (!BUILD || !u || u.n <= BUILD || S.view !== 'life') return;
     var g = document.querySelector('#body .lgreet'); if (!g) return;
     g.insertAdjacentHTML('afterend', '<div class="card" id="updc" style="border-color:var(--acc);display:flex;gap:12px;align-items:center"><span style="font-size:26px">⬆️</span><div style="flex:1"><b>' + tt('نیا ورژن دستیاب', 'New version available') + '</b><small style="display:block;color:var(--mut);font-size:12.5px">' + tt('ورژن ', 'Version ') + u.n + '</small></div><button class="sbtn p" id="updb">' + tt('ڈاؤن لوڈ', 'Download') + '</button></div>');
-    $('#updb').onclick = function () { CL.openUrl(u.url); };
+    $('#updb').onclick = function () { if (CL.doUpdate) CL.doUpdate(u); else CL.openUrl(u.url); };
   });
   setTimeout(function () { upd(false).then(function (u) { if (u && BUILD && u.n > BUILD && S.view === 'life' && CL.views.life) { try { CL.views.life(true); } catch (e) { /* ignore */ } } }); }, 6000);
 

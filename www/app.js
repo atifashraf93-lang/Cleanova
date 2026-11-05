@@ -846,7 +846,16 @@
   /* ---------- personal trip log ---------- */
   var TP = (Cap && Cap.Plugins && Cap.Plugins.Travel && !window.CLEANOVA_MOCK) ? Cap.Plugins.Travel : window.TravelMock;
   var tripTimer = 0;
-  function clearTrip() { if (tripTimer) { clearInterval(tripTimer); tripTimer = 0; } }
+  var liveW = null;
+  function stopLive() { if (liveW != null && navigator.geolocation) { try { navigator.geolocation.clearWatch(liveW); } catch (e) { /* ignore */ } } liveW = null; }
+  function liveSpeed(Tt) {
+    if (liveW != null || !navigator.geolocation) return;
+    liveW = navigator.geolocation.watchPosition(function (p) {
+      var v = p.coords.speed; if (v == null || isNaN(v) || (p.coords.accuracy || 0) > 60) return;
+      Tt.liveSp = v < 0.6 ? 0 : v; var e = document.getElementById('trsp'); if (e) e.textContent = Math.round(Tt.liveSp * 3.6) + ' km/h';
+    }, function () { /* no fix yet */ }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+  }
+  function clearTrip() { stopLive(); if (tripTimer) { clearInterval(tripTimer); tripTimer = 0; } }
   function km(m) { return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(m < 10000 ? 2 : 1) + ' km'; }
   function tclock(t) { var d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
   function tdate(t) { return '<bdi dir="ltr">' + new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + tclock(t) + '</bdi>'; }
@@ -878,7 +887,7 @@
     var st = Tt.status || {}, h = '';
     if (st.active) {
       var t = st.trip || {}, el = Math.max(0, Date.now() - (t.start || Date.now()));
-      h += '<div class="hero" style="display:block;margin-top:6px"><div class="k">' + T('سفر ریکارڈ ہو رہا ہے ●', 'Recording trip ●') + '</div><div class="big">' + km(t.distance || 0) + '</div><div class="k" style="font-size:13px">' + dur(el) + ' · ' + (t.points || 0) + ' ' + tt('پوائنٹس', 'points') + '</div><button class="btn" id="trStop" style="background:var(--red);color:#fff;box-shadow:none">' + T('سفر ختم کریں', 'End trip') + '</button></div>';
+      h += '<div class="hero" style="display:block;margin-top:6px"><div class="k">' + T('سفر ریکارڈ ہو رہا ہے ●', 'Recording trip ●') + '</div><div class="big">' + km(t.distance || 0) + '</div><div class="k" style="font-size:13px">' + dur(el) + ' · ' + (t.points || 0) + ' ' + tt('پوائنٹس', 'points') + '</div><div class="kv" style="margin-top:8px"><span>🚗 ' + tt('ابھی رفتار', 'Speed now') + '</span><b id="trsp" style="direction:ltr;font-size:22px">' + (Tt.liveSp == null ? '–' : Math.round(Tt.liveSp * 3.6)) + ' km/h</b></div><div class="kv"><span>' + tt('زیادہ سے زیادہ', 'Top speed') + '</span><b style="direction:ltr">' + Math.round((t.maxSpeed || 0) * 3.6) + ' km/h</b></div><div class="kv"><span>' + tt('اوسط', 'Average') + '</span><b style="direction:ltr">' + (el > 5000 ? (((t.distance || 0) / (el / 1000)) * 3.6).toFixed(1) : '0') + ' km/h</b></div><button class="btn o" id="trBig" style="margin-top:8px">' + T('رفتار کا بڑا ڈسپلے', 'Big speedometer') + '</button><button class="btn" id="trStop" style="background:var(--red);color:#fff;box-shadow:none">' + T('سفر ختم کریں', 'End trip') + '</button></div>';
     } else if (!Tt.perm) {
       h += '<div class="card center" style="margin-top:6px"><div style="font-size:44px">🧭</div><h2 style="font-size:19px">' + T('لوکیشن کی اجازت', 'Location permission') + '</h2><p class="mut" style="margin-top:6px">' + tt('سفر کا راستہ، فاصلہ اور وقت ریکارڈ کرنے کے لیے لوکیشن چاہیے۔ ریکارڈ صرف آپ کے فون میں رہتا ہے، کہیں اپلوڈ نہیں ہوتا، اور صرف تب بنتا ہے جب آپ خود "سفر شروع" دبائیں۔', 'Location is needed to record your route, distance and time. It stays on your phone, is never uploaded, and only records after you tap "Start trip".') + '</p><button class="btn" id="trPerm">' + T('اجازت دیں', 'Allow location') + '</button></div>';
     } else {
@@ -908,6 +917,8 @@
     [].forEach.call(document.querySelectorAll('[data-dl]'), function (b) { b.onclick = function () { TP.tripConfig({ dataLimitMb: +b.dataset.dl }).then(function (r) { Tt.limit = r.dataLimitMb; vTrips(true); }); }; });
     var ps = $('#trPerm'); if (ps) ps.onclick = function () { TP.locRequest().then(function (r) { Tt.perm = !!(r && r.granted); if (!Tt.perm) toast('اجازت نہیں ملی', 'Permission not granted'); vTrips(true); }); };
     var sb = $('#trStart'); if (sb) sb.onclick = function () { TP.tripStart({ name: ($('#trName').value || '').trim() }).then(function () { Tt.status = { active: true, trip: { start: Date.now(), distance: 0, points: 0 } }; vTrips(true); toast('ریکارڈنگ شروع', 'Recording started'); }).catch(function (e) { toast('شروع نہیں ہو سکا', 'Could not start: ' + (e && e.message || e)); }); };
+    var bg = $('#trBig'); if (bg) bg.onclick = function () { go('speed'); };
+    if (st.active) liveSpeed(Tt); else stopLive();
     var eb = $('#trStop'); if (eb) eb.onclick = function () { TP.tripStop().then(function () { Tt.status = { active: false }; return TP.tripList(); }).then(function (r) { Tt.list = (r && r.trips) || []; vTrips(true); toast('سفر محفوظ ہو گیا', 'Trip saved'); }); };
     [].forEach.call(document.querySelectorAll('[data-trip]'), function (b) { b.onclick = function () { S.trip = { id: +b.dataset.trip }; go('trip'); }; });
   }
@@ -927,6 +938,11 @@
     var h = '<div class="card" style="margin-top:6px"><b style="font-size:17px">' + (tr.name || tdate(tr.start)) + '</b><div class="mut" style="font-size:12.5px">' + tdate(tr.start) + ' → <bdi dir="ltr">' + tclock(tr.end) + '</bdi></div>' + (D.pts ? routeSvg(D.pts) : '<div class="center" style="padding:30px"><div class="spin"></div></div>') +
       ((D.from || D.to) ? '<div class="kv" style="margin-top:8px"><span>🟢 ' + tt('سے', 'From') + '</span><b style="direction:rtl">' + (D.from || '–') + '</b></div><div class="kv"><span>🔴 ' + tt('تک', 'To') + '</span><b style="direction:rtl">' + (D.to || '–') + '</b></div>' : '') + '</div>';
     h += '<div class="card"><div class="kv"><span>' + tt('فاصلہ', 'Distance') + '</span><b>' + km(tr.distance) + '</b></div><div class="kv"><span>' + tt('دورانیہ', 'Duration') + '</span><b>' + dur(tr.end - tr.start) + '</b></div><div class="kv"><span>' + tt('اوسط رفتار', 'Average speed') + '</span><b>' + avg.toFixed(1) + ' km/h</b></div><div class="kv"><span>' + tt('زیادہ سے زیادہ رفتار', 'Top speed') + '</span><b>' + Math.round(tr.maxSpeed * 3.6) + ' km/h</b></div><div class="kv"><span>' + tt('ریکارڈ شدہ پوائنٹس', 'Recorded points') + '</span><b>' + tr.points + '</b></div></div>';
+    if (D.pts && D.pts.length > 3) {
+      var sps = D.pts.map(function (q) { return (q.sp || 0) * 3.6; }), smx = Math.max.apply(null, sps) || 1, sw = 300, sh = 70;
+      var sd = sps.map(function (v, i) { return (i ? 'L' : 'M') + (i / (sps.length - 1) * sw).toFixed(1) + ' ' + (sh - v / smx * (sh - 6) - 3).toFixed(1); }).join(' ');
+      h += '<div class="card"><b>' + tt('سفر میں رفتار', 'Speed during the trip') + '</b><svg viewBox="0 0 ' + sw + ' ' + sh + '" style="width:100%;height:80px;margin-top:6px;direction:ltr"><path d="' + sd + '" fill="none" stroke="#38bdf8" stroke-width="2"/></svg><div class="kv"><span>' + tt('سب سے تیز', 'Fastest') + '</span><b style="direction:ltr">' + Math.round(smx) + ' km/h</b></div></div>';
+    }
     var dt = D.det || {}, ex = D.extra || [], spent = 0;
     ex.forEach(function (e) { if (e.k === 'e') spent += +e.a || 0; });
     h += '<div class="card">' +

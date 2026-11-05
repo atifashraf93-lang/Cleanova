@@ -17,7 +17,7 @@ window.CLifeInit7 = function (CL) {
   function plusDays(n) { var d = new Date(); d.setDate(d.getDate() + n); return dstr(d); }
 
   /* ================= CATALOG ================= */
-  var CATS = [['all', ['سب', 'All']], ['daily', ['روزمرہ', 'Daily']], ['money', ['پیسہ', 'Money']], ['travel', ['سفر', 'Travel']], ['health', ['صحت', 'Health']], ['files', ['فائلیں', 'Files']], ['safe', ['حفاظت', 'Safety']], ['web', ['آن لائن', 'Online']]];
+  var CATS = [['all', ['سب', 'All']], ['daily', ['روزمرہ', 'Daily']], ['money', ['پیسہ', 'Money']], ['travel', ['سفر', 'Travel']], ['health', ['صحت', 'Health']], ['files', ['فائلیں', 'Files']], ['safe', ['حفاظت', 'Safety']], ['sense', ['سینسرز', 'Sensors']], ['web', ['آن لائن', 'Online']]];
   /* id: [category, description ur, description en, search words (urdu, roman, english)] */
   var EX = {
     weather: ['daily', 'آج اور آنے والے دنوں کا موسم', 'Weather today and ahead', 'موسم mausam barish garmi sardi temperature weather'],
