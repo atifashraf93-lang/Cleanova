@@ -112,12 +112,24 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk Cleanova.apk
           cd android/app/src/main/assets/public && zip -qr "$GITHUB_WORKSPACE/www.zip" . && cd "$GITHUB_WORKSPACE" && ls -l www.zip
 
+      - name: Second download address for the web bundle (ota branch)
+        id: ota
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/ota && cp www.zip /tmp/ota/ && cd /tmp/ota
+          git init -q && git checkout -q -b ota
+          git config user.name "Cleanova CI" && git config user.email "ci@users.noreply.github.com"
+          git add www.zip && git commit -q -m "web bundle ${{ github.run_number }}"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git push -q -f origin ota
+          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
       - name: Publish APK as a release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-${{ github.run_number }}
           name: Cleanova APK ${{ github.run_number }}
-          body: "need=2"
+          body: "need=2 sha=${{ steps.ota.outputs.sha }}"
           files: |
             Cleanova.apk
             www.zip

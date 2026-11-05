@@ -35,7 +35,7 @@ import java.util.zip.ZipFile;
 @CapacitorPlugin(name = "Sense")
 public class SensePlugin extends Plugin {
     /** Bump this whenever the Java side changes in a way the web files depend on. */
-    static final int API = 2;
+    static final int API = 3;
     static final String OTA_PREFS = "cl.ota";
 
     private SensorManager sm;
@@ -115,8 +115,8 @@ public class SensePlugin extends Plugin {
     /* ---------- download helper ---------- */
     private void fetch(String url, File out, String evt) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-        c.setConnectTimeout(20000);
-        c.setReadTimeout(30000);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(60000);
         c.setInstanceFollowRedirects(true);
         c.setRequestProperty("User-Agent", "CleanovaLife");
         int code = c.getResponseCode();
@@ -142,6 +142,34 @@ public class SensePlugin extends Plugin {
         if (total > 0 && got != total) throw new Exception("incomplete");
     }
 
+    private java.util.List<String> urls(PluginCall call) {
+        java.util.List<String> l = new java.util.ArrayList<String>();
+        try {
+            com.getcapacitor.JSArray a = call.getArray("urls");
+            if (a != null) for (int i = 0; i < a.length(); i++) { String x = a.getString(i); if (x != null && x.startsWith("http") && !l.contains(x)) l.add(x); }
+        } catch (Throwable t) { /* ignore */ }
+        String u = call.getString("url", "");
+        if (u != null && u.startsWith("http") && !l.contains(u)) l.add(u);
+        return l;
+    }
+
+    /** Tries every address, twice around, and reports what went wrong at each. */
+    private void fetchAny(java.util.List<String> list, File out, String evt) throws Exception {
+        StringBuilder err = new StringBuilder();
+        for (int round = 0; round < 2; round++) {
+            for (String u : list) {
+                try { fetch(u, out, evt); return; } catch (Throwable t) {
+                    String host = "?";
+                    try { host = new URL(u).getHost(); } catch (Throwable x) { /* ignore */ }
+                    String m = t.getClass().getSimpleName() + (t.getMessage() == null ? "" : " " + t.getMessage());
+                    if (err.indexOf(host + " " + m) < 0) err.append(host).append(": ").append(m).append(" | ");
+                    try { Thread.sleep(1200); } catch (InterruptedException e) { /* ignore */ }
+                }
+            }
+        }
+        throw new Exception(err.toString());
+    }
+
     private static void wipe(File f) {
         if (f == null || !f.exists()) return;
         File[] k = f.listFiles();
@@ -152,15 +180,15 @@ public class SensePlugin extends Plugin {
     /* ---------- web bundle update (no reinstall) ---------- */
     @PluginMethod
     public void otaApply(final PluginCall call) {
-        final String url = call.getString("url", "");
+        final java.util.List<String> list = urls(call);
         final long build = call.getLong("build", 0L);
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
-                    if (url.length() == 0 || build <= 0) throw new Exception("bad args");
+                    if (list.isEmpty() || build <= 0) throw new Exception("bad args");
                     File base = new File(ctx().getFilesDir(), "ota");
                     File zip = new File(ctx().getCacheDir(), "ota.zip");
-                    fetch(url, zip, "otaProgress");
+                    fetchAny(list, zip, "otaProgress");
                     File dir = new File(base, String.valueOf(build));
                     wipe(dir);
                     dir.mkdirs();
@@ -205,14 +233,14 @@ public class SensePlugin extends Plugin {
     /* ---------- full app update (native changes) ---------- */
     @PluginMethod
     public void apkInstall(final PluginCall call) {
-        final String url = call.getString("url", "");
+        final java.util.List<String> list = urls(call);
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
                     File dir = new File(ctx().getCacheDir(), "update");
                     dir.mkdirs();
                     File apk = new File(dir, "Cleanova.apk");
-                    if (call.getBoolean("fresh", true) || !apk.exists()) fetch(url, apk, "apkProgress");
+                    if (call.getBoolean("fresh", true) || !apk.exists()) fetchAny(list, apk, "apkProgress");
                     if (Build.VERSION.SDK_INT >= 26 && !ctx().getPackageManager().canRequestPackageInstalls()) {
                         Intent s = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + ctx().getPackageName()));
                         s.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

@@ -274,15 +274,36 @@ window.CLifeInit15 = function (CL) {
   function otaOk() { try { var p = SN(); if (p && p.otaOk) p.otaOk(); } catch (e) { /* ignore */ } }
   setTimeout(otaOk, 4000);
   /* new web files: download in the background, switch the next time the app comes to the front */
+  var REPOP = 'atifashraf93-lang/Cleanova';
+  function zipUrls(u) {
+    var l = [u.zip];
+    if (u.sha) { l.push('https://cdn.jsdelivr.net/gh/' + REPOP + '@' + u.sha + '/www.zip'); l.push('https://raw.githubusercontent.com/' + REPOP + '/' + u.sha + '/www.zip'); }
+    return l;
+  }
+  function bar(txt) {
+    var b = document.getElementById('otabar');
+    if (!txt) { if (b) b.remove(); return; }
+    if (!b) { b = document.createElement('div'); b.id = 'otabar'; b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:92px;z-index:99;background:var(--card,#111a2e);border:1px solid var(--acc);color:var(--text);border-radius:14px;padding:10px 14px;text-align:center;font-size:14px;direction:ltr'; document.body.appendChild(b); }
+    b.textContent = txt;
+  }
+  var lis = false;
+  function listen(p) { if (lis || !p.addListener) return; lis = true; try { p.addListener('otaProgress', function (e) { bar('⬇ ' + e.pct + '%'); }); p.addListener('apkProgress', function (e) { bar('⬇ ' + e.pct + '%'); }); } catch (e) { /* ignore */ } }
+  function fail(e) {
+    busy = false; bar(null);
+    var m = String((e && (e.message || e.errorMessage)) || e || 'unknown'); lset('otaerr', m);
+    CL.toast('اپڈیٹ نہیں لگ سکی: ' + m.slice(0, 140), 'Update failed: ' + m.slice(0, 140));
+  }
+  /* new web files: download in the background, switch the next time the app comes to the front */
   CL.doUpdate = function (u) {
     var p = SN(), w = wv();
     if (!u) return;
+    if (p) listen(p);
     if (u.zip && p && p.otaApply && w && w.setServerBasePath && (u.need || 1) <= API) {
-      if (busy) return; busy = true; CL.toast('اپڈیٹ ڈاؤن لوڈ ہو رہی ہے…', 'Downloading update…');
-      p.otaApply({ url: u.zip, build: u.n }).then(function (r) { ready = { path: r.path, n: u.n }; busy = false; lset('otaready', ready); CL.toast('اپڈیٹ تیار ہے، ایپ دوبارہ کھلنے پر لگ جائے گی', 'Update ready, it applies when you reopen the app'); }).catch(function () { busy = false; lset('otabad', u.n); CL.toast('اپڈیٹ نہیں لگ سکی', 'Update failed'); });
+      if (busy) return; busy = true; lset('otaerr', ''); bar('⬇ 0%'); CL.toast('اپڈیٹ ڈاؤن لوڈ ہو رہی ہے…', 'Downloading update…');
+      p.otaApply({ url: u.zip, urls: zipUrls(u), build: u.n }).then(function (r) { busy = false; bar(null); lset('otaerr', ''); ready = { path: r.path, n: u.n }; lset('otaready', ready); CL.toast('اپڈیٹ تیار ہے: "ابھی لگائیں" دبائیں یا ایپ دوبارہ کھولیں', 'Update ready: tap "Apply now" or reopen the app'); if (S.view === 'diag') V.diag(); else if (S.view === 'life' && V.life) V.life(true); }).catch(fail);
     } else if (p && p.apkInstall) {
-      if (busy) return; busy = true; CL.toast('نئی ایپ ڈاؤن لوڈ ہو رہی ہے…', 'Downloading the new app…');
-      p.apkInstall({ url: u.url }).then(function (r) { busy = false; if (r && r.needPerm) CL.toast('"اس سورس سے انسٹال کی اجازت" آن کریں، پھر دوبارہ دبائیں', 'Allow installs from this app, then tap again'); }).catch(function () { busy = false; CL.openUrl(u.url); });
+      if (busy) return; busy = true; bar('⬇ 0%'); CL.toast('نئی ایپ ڈاؤن لوڈ ہو رہی ہے…', 'Downloading the new app…');
+      p.apkInstall({ url: u.url, urls: [u.url] }).then(function (r) { busy = false; bar(null); if (r && r.needPerm) CL.toast('"اس سورس سے انسٹال کی اجازت" آن کریں، پھر دوبارہ دبائیں', 'Allow installs from this app, then tap again'); }).catch(function (e) { fail(e); setTimeout(function () { CL.openUrl(u.url); }, 2500); });
     } else CL.openUrl(u.url);
   };
   function applyReady() {
@@ -292,6 +313,7 @@ window.CLifeInit15 = function (CL) {
     try { w.setServerBasePath({ path: r.path }).then(function () { return w.persistServerBasePath ? w.persistServerBasePath() : null; }); } catch (e) { /* ignore */ }
     return true;
   }
+  CL.applyOta = function () { if (!applyReady()) CL.toast('اپڈیٹ پہلے ہی لگ چکی ہے', 'Already up to date'); };
   var hiddenAt = 0;
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) { hiddenAt = Date.now(); return; }

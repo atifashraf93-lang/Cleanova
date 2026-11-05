@@ -70,11 +70,11 @@ window.CLifeInit14 = function (CL) {
         row(n.ok, tt('انٹرنیٹ اور Firebase', 'Internet and Firebase'), n.ok ? tt('جڑا ہوا ہے', 'Connected') + (n.code === 403 ? ' · ' + tt('(rules چل رہے ہیں)', '(rules active)') : '') : tt('جڑ نہیں سکا۔ انٹرنیٹ دیکھیں۔', 'Could not connect. Check the internet.'), '', '') +
         row(rooms ? true : null, tt('چیٹ روم', 'Chat rooms'), rooms ? rooms + ' ' + tt('روم', 'rooms') + ' · ' + (c.fast ? tt('تیز نوٹیفکیشن آن', 'fast notifications on') : tt('تیز نوٹیفکیشن بند (15 منٹ)', 'fast notifications off (15 min)')) : tt('ابھی کوئی روم نہیں', 'No rooms yet'), '', '') +
         (d ? row(d.lastRun ? Date.now() - d.lastRun < 3600000 : null, tt('آخری پس منظر کی جانچ', 'Last background check'), ago(d.lastRun) + (d.err ? '<br><span style="color:var(--red)">' + esc(String(d.err).slice(0, 120)) + '</span>' : ''), '', '') : '') + '</div>';
-      h += '<div class="card"><b>' + tt('ایپ ورژن', 'App version') + '</b>' + row(u && u.n > BUILD ? false : (BUILD ? true : null), tt('ورژن', 'Version') + ' ' + (BUILD || '–'), u ? (u.n > BUILD ? tt('نیا ورژن ', 'New version ') + u.n + tt(' دستیاب ہے', ' is available') : tt('آپ کے پاس تازہ ترین ہے', 'You have the latest')) : tt('معلوم نہیں ہو سکا', 'Could not check'), tt('ڈاؤن لوڈ', 'Download'), 'dgu') + '</div>';
+      h += '<div class="card"><b>' + tt('ایپ ورژن', 'App version') + '</b>' + row(u && u.n > BUILD ? false : (BUILD ? true : null), tt('ورژن', 'Version') + ' ' + (BUILD || '–'), u ? (u.n > BUILD ? tt('نیا ورژن ', 'New version ') + u.n + tt(' دستیاب ہے', ' is available') : tt('آپ کے پاس تازہ ترین ہے', 'You have the latest')) + (lget('otaerr', '') ? '<br><span style="color:var(--red);direction:ltr;display:block;font-size:11.5px">' + esc(String(lget('otaerr', '')).slice(0, 260)) + '</span>' : '') : tt('معلوم نہیں ہو سکا', 'Could not check'), lget('otaready', null) ? tt('ابھی لگائیں', 'Apply now') : tt('اپڈیٹ کریں', 'Update'), 'dgu') + '</div>';
       if (d) h += '<p class="note">📱 ' + esc(d.brand || '') + ' · Android ' + (d.sdk || '') + '</p>';
       $('#body').innerHTML = h + CL.footer();
       fixes(d); $('#dgt').onclick = testNotif;
-      if ($('#dgu')) $('#dgu').onclick = function () { if (u && CL.doUpdate) CL.doUpdate(u); else if (u && u.url) CL.openUrl(u.url); };
+      if ($('#dgu')) $('#dgu').onclick = function () { if (lget('otaready', null) && CL.applyOta) CL.applyOta(); else if (u && CL.doUpdate) CL.doUpdate(u); else if (u && u.url) CL.openUrl(u.url); };
     });
   }
   V.diag = vDiag;
@@ -88,8 +88,8 @@ window.CLifeInit14 = function (CL) {
       (rs || []).forEach(function (x) {
         var m = /^apk-(\d+)$/.exec(x.tag_name || ''); if (!m || !x.assets || (best && +m[1] <= best.n)) return;
         var apk = null, zip = null; x.assets.forEach(function (a) { if (/\.apk$/i.test(a.name)) apk = a.browser_download_url; else if (a.name === 'www.zip') zip = a.browser_download_url; });
-        var nd = /need=(\d+)/.exec(x.body || '');
-        if (apk) best = { n: +m[1], url: apk, zip: zip, need: nd ? +nd[1] : 1, t: Date.now() };
+        var nd = /need=(\d+)/.exec(x.body || ''), sh = /sha=([0-9a-f]{7,40})/.exec(x.body || '');
+        if (apk) best = { n: +m[1], url: apk, zip: zip, need: nd ? +nd[1] : 1, sha: sh ? sh[1] : '', t: Date.now() };
       });
       if (best) lset('upd', best);
       return best;
@@ -100,8 +100,8 @@ window.CLifeInit14 = function (CL) {
     var old = document.getElementById('updc'); if (old) old.remove();
     var u = lget('upd', null); if (!BUILD || !u || u.n <= BUILD || S.view !== 'life') return;
     var g = document.querySelector('#body .lgreet'); if (!g) return;
-    g.insertAdjacentHTML('afterend', '<div class="card" id="updc" style="border-color:var(--acc);display:flex;gap:12px;align-items:center"><span style="font-size:26px">⬆️</span><div style="flex:1"><b>' + tt('نیا ورژن دستیاب', 'New version available') + '</b><small style="display:block;color:var(--mut);font-size:12.5px">' + tt('ورژن ', 'Version ') + u.n + '</small></div><button class="sbtn p" id="updb">' + tt('ڈاؤن لوڈ', 'Download') + '</button></div>');
-    $('#updb').onclick = function () { if (CL.doUpdate) CL.doUpdate(u); else CL.openUrl(u.url); };
+    g.insertAdjacentHTML('afterend', '<div class="card" id="updc" style="border-color:var(--acc);display:flex;gap:12px;align-items:center"><span style="font-size:26px">⬆️</span><div style="flex:1"><b>' + tt('نیا ورژن دستیاب', 'New version available') + '</b><small style="display:block;color:var(--mut);font-size:12.5px">' + tt('ورژن ', 'Version ') + u.n + '</small></div><button class="sbtn p" id="updb">' + (lget('otaready', null) ? tt('ابھی لگائیں', 'Apply now') : tt('اپڈیٹ کریں', 'Update')) + '</button></div>');
+    $('#updb').onclick = function () { if (lget('otaready', null) && CL.applyOta) CL.applyOta(); else if (CL.doUpdate) CL.doUpdate(u); else CL.openUrl(u.url); };
   });
   setTimeout(function () { upd(false).then(function (u) { if (u && BUILD && u.n > BUILD && S.view === 'life' && CL.views.life) { try { CL.views.life(true); } catch (e) { /* ignore */ } } }); }, 6000);
 
