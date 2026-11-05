@@ -307,5 +307,101 @@ window.CLifeInit15 = function (CL) {
   /* the first start after an OTA switch: confirm */
   var ot = lget('otatry', 0); if (ot && (window.CL_BUILD || 0) >= ot) { lset('otatry', 0); CL.toast('ایپ اپڈیٹ ہو گئی ✅', 'App updated ✅'); }
 
+  /* ---------- my utility bills ---------- */
+  CL.regTool('bills', '🧾', 4, ['میری بلز', 'My bills'], 'money', ['K-Electric، SSGC، KWSB: نمبر، رقم، آخری تاریخ، یاد دہانی', 'K-Electric, SSGC, KWSB: number, amount, due date, reminders'], 'بل bill بجلی گیس پانی k-electric ke کے الیکٹرک ssgc sui gas سوئی گیس kwsb kwsc water پانی utility', true);
+  var BC = { ke: ['K-Electric', '⚡', 'https://www.ke.com.pk/', 'کے الیکٹرک'], ssgc: ['SSGC', '🔥', 'https://www.ssgc.com.pk/', 'سوئی سدرن گیس'], kwsb: ['KWSB', '💧', 'https://www.kwsc.gos.pk/', 'واٹر بورڈ'] };
+  function bdata() { var d = lget('bills', null); if (!d || !d.items) d = { items: [], hist: [] }; return d; }
+  function bsave(d) { lset('bills', d); remind(d); }
+  function dleft(due) { if (!due) return null; var t = new Date(due + 'T00:00:00'); return Math.round((t - new Date(new Date().toDateString())) / 86400000); }
+  function remind(d) {
+    var n = [], i = 0;
+    d.items.forEach(function (b) {
+      if (b.paid || !b.due) return;
+      var t = new Date(b.due + 'T09:00:00');
+      [[3, 'کی آخری تاریخ 3 دن میں ہے', ' is due in 3 days'], [0, 'کی آخری تاریخ آج ہے', ' is due today']].forEach(function (k) {
+        var at = new Date(t.getTime() - k[0] * 86400000); if (at.getTime() > Date.now()) n.push({ id: 7410 + (i++), title: 'Cleanova Life', body: BC[b.co][0] + ' ' + tt('بل ' + k[1], 'bill' + k[2]) + (b.amt ? ' · Rs. ' + b.amt : ''), schedule: { at: at, allowWhileIdle: true } });
+      });
+    });
+    try {
+      var ids = []; for (var k = 7410; k < 7430; k++) ids.push({ id: k });
+      var go = function () { if (n.length) U.scheduleLN(n); };
+      if (CL.LN && CL.LN.cancel) CL.LN.cancel({ notifications: ids }).then(go, go); else go();
+    } catch (e) { /* ignore */ }
+  }
+  function bsheet(h) { var m = $('#modal'); m.hidden = false; $('#sheet').innerHTML = '<div style="max-height:80vh;overflow-y:auto">' + h + '</div>'; }
+  var INP = 'width:100%;min-height:46px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:15px;margin-top:8px;direction:ltr';
+  /* "SSGC 4498860000 1050 2026-11-02, KWSB G0280405000, KE 0400010029501 10241 2026-11-10" */
+  function parseLine(t) {
+    var out = [];
+    String(t).split(/[,\n;]+/).forEach(function (seg) {
+      var w = seg.trim().split(/\s+/); if (w.length < 2) return;
+      var k = /ssgc|gas/i.test(w[0]) ? 'ssgc' : /kwsb|kwsc|water/i.test(w[0]) ? 'kwsb' : /^(ke|kel|k-?electric)$/i.test(w[0]) ? 'ke' : '';
+      if (!k) return;
+      var it = { co: k, num: w[1].replace(/[^A-Za-z0-9]/g, '') }, a = +w[2]; if (w[2] && !isNaN(a)) it.amt = a; if (w[3] && /^\d{4}-\d{2}-\d{2}$/.test(w[3])) it.due = w[3];
+      out.push(it);
+    });
+    return out;
+  }
+  function openBill(b) {
+    try { navigator.clipboard.writeText(b.num); } catch (e) { /* ignore */ }
+    CL.toast('نمبر کاپی ہو گیا: ' + b.num, 'Number copied: ' + b.num);
+    var W = CL.webOpen2; if (W) W(b.url || BC[b.co][2], BC[b.co][0], b.num); else CL.openUrl(b.url || BC[b.co][2]);
+  }
+  function editBill(i) {
+    var d = bdata(), b = i == null ? { co: 'ke', num: '' } : d.items[i];
+    bsheet('<b style="font-size:18px">' + (i == null ? tt('نیا بل', 'New bill') : BC[b.co][0]) + '</b>' +
+      (i == null ? '<div class="chips">' + Object.keys(BC).map(function (k) { return '<button class="chip' + (k === b.co ? ' on' : '') + '" data-bco="' + k + '">' + BC[k][0] + '</button>'; }).join('') + '</div>' : '') +
+      '<input id="bn" inputmode="text" placeholder="' + tt('کنزیومر / اکاؤنٹ نمبر', 'Consumer / account number') + '" value="' + esc(b.num || '') + '" style="' + INP + '">' +
+      '<input id="ba" inputmode="numeric" placeholder="' + tt('بل کی رقم (روپے)', 'Bill amount (Rs.)') + '" value="' + (b.amt || '') + '" style="' + INP + '">' +
+      '<input id="bd" type="date" value="' + (b.due || '') + '" style="' + INP + '">' +
+      '<input id="bu" placeholder="' + tt('بل دیکھنے کا لنک (اختیاری)', 'Bill page link (optional)') + '" value="' + esc(b.url || '') + '" style="' + INP + '">' +
+      '<button class="btn" id="bsv">' + tt('محفوظ کریں', 'Save') + '</button>' + (i != null ? '<button class="btn o" id="bdl" style="color:var(--red)">' + tt('ہٹائیں', 'Remove') + '</button>' : ''));
+    [].forEach.call(document.querySelectorAll('[data-bco]'), function (x) { x.onclick = function () { b.co = x.dataset.bco; [].forEach.call(document.querySelectorAll('[data-bco]'), function (y) { y.classList.toggle('on', y === x); }); }; });
+    $('#bsv').onclick = function () {
+      var n = $('#bn').value.replace(/[^A-Za-z0-9]/g, ''); if (!n) { CL.toast('نمبر لکھیں', 'Enter the number'); return; }
+      var it = { co: b.co, num: n, amt: +$('#ba').value || 0, due: $('#bd').value || '', url: ($('#bu').value || '').trim(), paid: b.paid && b.due === $('#bd').value && b.amt === (+$('#ba').value || 0) };
+      if (i == null) d.items.push(it); else d.items[i] = it;
+      bsave(d); $('#modal').hidden = true; V.bills();
+    };
+    if (i != null) $('#bdl').onclick = function () { d.items.splice(i, 1); bsave(d); $('#modal').hidden = true; V.bills(); };
+  }
+  function importSheet() {
+    bsheet('<b style="font-size:18px">' + tt('نمبر ایک ساتھ ڈالیں', 'Paste all numbers') + '</b><p class="note">' + tt('ایک لائن چپکائیں، مثلاً: SSGC 4498860000 1050 2026-11-02, KWSB G0280405000, KE 0400010029501 10241 2026-11-10 (رقم اور تاریخ اختیاری ہیں)', 'Paste one line, e.g.: SSGC 4498860000 1050 2026-11-02, KWSB G0280405000, KE 0400010029501 10241 2026-11-10 (amount and date are optional)') + '</p><textarea id="bp" rows="4" style="' + INP + ';padding:10px"></textarea><button class="btn" id="bpg">' + tt('شامل کریں', 'Add') + '</button>');
+    $('#bpg').onclick = function () {
+      var l = parseLine($('#bp').value); if (!l.length) { CL.toast('کوئی نمبر نہیں ملا', 'No numbers found'); return; }
+      var d = bdata(); l.forEach(function (n) { var k = -1; d.items.forEach(function (x, j) { if (x.co === n.co && x.num === n.num) k = j; }); if (k >= 0) d.items[k] = Object.assign(d.items[k], n); else d.items.push(n); });
+      bsave(d); $('#modal').hidden = true; V.bills(); CL.toast(l.length + ' بل شامل ہوئے', l.length + ' bills added');
+    };
+  }
+  V.bills = function () {
+    begin('bills', T('میری بلز', 'My bills'));
+    var d = bdata(), h = '';
+    var due = d.items.filter(function (b) { return !b.paid && b.amt; }), tot = due.reduce(function (a, b) { return a + b.amt; }, 0);
+    h += '<div class="card" style="margin-top:8px"><div class="kv"><span>' + tt('کل ادائیگی باقی', 'Total unpaid') + '</span><b style="font-size:22px;direction:ltr">Rs. ' + tot.toLocaleString('en') + '</b></div></div>';
+    if (!d.items.length) h += '<div class="card center mut">' + tt('ابھی کوئی بل نہیں۔ نیچے سے نمبر شامل کریں۔', 'No bills yet. Add your numbers below.') + '</div>';
+    d.items.forEach(function (b, i) {
+      var left = dleft(b.due), st = b.paid ? ['✅', tt('ادا ہو گیا', 'Paid'), '#22c55e'] : left == null ? ['', '', 'var(--mut)'] : left < 0 ? ['⚠️', tt('آخری تاریخ گزر گئی (' + (-left) + ' دن)', 'Overdue (' + (-left) + ' days)'), '#ef4444'] : left <= 3 ? ['⏰', tt(left + ' دن باقی', left + ' days left'), '#f59e0b'] : ['', tt(left + ' دن باقی', left + ' days left'), 'var(--mut)'];
+      h += '<div class="card"><div class="kv" style="border:0"><span style="font-size:17px"><b>' + BC[b.co][1] + ' ' + BC[b.co][0] + '</b></span><b style="direction:ltr;font-size:20px">' + (b.amt ? 'Rs. ' + b.amt.toLocaleString('en') : '–') + '</b></div>' +
+        '<div class="kv" style="border:0"><span class="mut" style="direction:ltr">' + esc(b.num) + '</span><span style="color:' + st[2] + '">' + st[0] + ' ' + st[1] + '</span></div>' + (b.due ? '<div class="mut" style="font-size:12.5px;direction:ltr">' + tt('آخری تاریخ: ', 'Due: ') + b.due + '</div>' : '') +
+        '<div class="chips"><button class="chip on" data-bo="' + i + '">🔎 ' + tt('بل دیکھیں', 'View bill') + '</button><button class="chip" data-bp="' + i + '">' + (b.paid ? tt('↺ باقی کریں', '↺ Unpaid') : '✔ ' + tt('ادا کر دیا', 'Mark paid')) + '</button><button class="chip" data-be="' + i + '">✎ ' + tt('درست کریں', 'Edit') + '</button></div></div>';
+    });
+    h += '<button class="btn" id="bad">＋ ' + tt('بل شامل کریں', 'Add bill') + '</button><button class="btn o" id="bim">📋 ' + tt('سب نمبر ایک ساتھ ڈالیں', 'Paste all numbers') + '</button>';
+    var hist = d.hist || [];
+    if (hist.length) {
+      var by = {}; hist.forEach(function (x) { by[x.m] = (by[x.m] || 0) + x.a; }); var ms = Object.keys(by).sort().slice(-6), mx = Math.max.apply(null, ms.map(function (k) { return by[k]; })) || 1;
+      h += '<div class="sec">' + tt('پچھلے مہینے', 'PAST MONTHS') + '</div><div class="card">' + ms.map(function (k) { return '<div class="kv" style="border:0"><span style="direction:ltr">' + k + '</span><b style="direction:ltr">Rs. ' + by[k].toLocaleString('en') + '</b></div><div class="mbar" style="margin-top:0"><i style="width:' + (by[k] / mx * 100) + '%;background:#38bdf8"></i></div>'; }).join('') + '</div>';
+    }
+    h += '<p class="note">' + tt('نمبر صرف آپ کے فون میں رہتے ہیں۔ "بل دیکھیں" دبانے پر نمبر کاپی ہو جاتا ہے اور کمپنی کی اصل سائٹ کھلتی ہے، کیپچا ہو تو آپ خود لکھیں۔ رقم اور تاریخ بل دیکھ کر درست کر دیں تو یاد دہانی خود لگ جاتی ہے (آخری تاریخ سے 3 دن پہلے اور اسی دن)۔', 'Numbers stay on your phone. "View bill" copies the number and opens the company\'s own site; type the captcha yourself if asked. Enter the amount and due date and reminders are set for 3 days before and on the due date.') + '</p>' + CL.footer();
+    $('#body').innerHTML = h;
+    [].forEach.call(document.querySelectorAll('[data-bo]'), function (x) { x.onclick = function () { openBill(d.items[+x.dataset.bo]); }; });
+    [].forEach.call(document.querySelectorAll('[data-be]'), function (x) { x.onclick = function () { editBill(+x.dataset.be); }; });
+    [].forEach.call(document.querySelectorAll('[data-bp]'), function (x) { x.onclick = function () {
+      var b = d.items[+x.dataset.bp]; b.paid = !b.paid; var mo = (b.due || new Date().toISOString().slice(0, 10)).slice(0, 7);
+      d.hist = (d.hist || []).filter(function (y) { return !(y.co === b.co && y.m === mo); }); if (b.paid && b.amt) d.hist.push({ co: b.co, m: mo, a: b.amt });
+      bsave(d); V.bills();
+    }; });
+    $('#bad').onclick = function () { editBill(null); }; $('#bim').onclick = importSheet;
+  };
+
   if (CL.wrapTools) CL.wrapTools();
 };

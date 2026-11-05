@@ -82,12 +82,12 @@ window.CLifeInit3 = function (CL) {
     return out.slice(0, n);
   }
   /* opens inside Cleanova's own window (native in-app browser); falls back to the phone's browser */
-  function open(url, title) {
+  function open(url, title, fill) {
     var W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Web;
     if (/^https?:\/\//.test(url) && W && !window.CLEANOVA_MOCK) {
       url = url.replace(/^https?:\/\/(www\.)?youtube\.com/, 'https://m.youtube.com');
       CL.webOpen = true;
-      W.open({ url: url, title: title || '', rtl: CL.PREF.lang !== 'en' }).catch(function () { CL.webOpen = false; if (CL.openUrl) CL.openUrl(url); });
+      W.open({ url: url, title: title || '', rtl: CL.PREF.lang !== 'en', fill: fill || '' }).catch(function () { CL.webOpen = false; if (CL.openUrl) CL.openUrl(url); });
     } else if (CL.openUrl) CL.openUrl(url); else window.open(url, '_blank');
   }
   CL.webOpen2 = open;

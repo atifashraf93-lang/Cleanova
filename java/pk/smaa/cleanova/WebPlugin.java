@@ -34,6 +34,7 @@ public class WebPlugin extends Plugin {
     private View customView;
     private WebChromeClient.CustomViewCallback customCb;
     private String curUrl = "";
+    private String fillVal = "";
 
     private int dp(int v) { return (int) (v * getActivity().getResources().getDisplayMetrics().density + 0.5f); }
 
@@ -52,6 +53,7 @@ public class WebPlugin extends Plugin {
         final String title = call.getString("title", "");
         final boolean ur = call.getBoolean("rtl", false);
         if (!url.startsWith("http")) { call.reject("bad url"); return; }
+        fillVal = call.getString("fill", "").replaceAll("[^A-Za-z0-9\\-]", "");
         getActivity().runOnUiThread(new Runnable() { public void run() {
             try {
                 if (root != null) { curUrl = url; wv.loadUrl(url); if (titleV != null) titleV.setText(title); call.resolve(); return; }
@@ -102,7 +104,14 @@ public class WebPlugin extends Plugin {
                         return !(u.startsWith("http://") || u.startsWith("https://") || u.startsWith("about:"));
                     }
                     @Override public void onPageStarted(WebView v, String u, Bitmap b) { curUrl = u; bar.setVisibility(View.VISIBLE); }
-                    @Override public void onPageFinished(WebView v, String u) { bar.setVisibility(View.GONE); }
+                    @Override public void onPageFinished(WebView v, String u) {
+                        bar.setVisibility(View.GONE);
+                        if (fillVal.length() > 0) {
+                            /* fills the first visible text/number box with the saved consumer number (never password boxes) */
+                            String js = "(function(v){var n=0;function go(){var l=document.querySelectorAll('input');for(var i=0;i<l.length;i++){var e=l[i],t=(e.type||'text').toLowerCase();if(['text','tel','number','search',''].indexOf(t)<0||e.disabled||e.readOnly||!e.offsetParent)continue;var d=((e.name||'')+(e.id||'')+(e.placeholder||'')).toLowerCase();if(/captcha|otp|pass|search|email|mobile|phone|cnic/.test(d))continue;if(e.value===v)return;var s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;s.call(e,v);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return;}if(++n<8)setTimeout(go,700);}go();})('" + fillVal + "');";
+                            v.evaluateJavascript(js, null);
+                        }
+                    }
                 });
                 wv.setWebChromeClient(new WebChromeClient() {
                     @Override public void onProgressChanged(WebView v, int p) { bar.setProgress(p); if (p >= 100) bar.setVisibility(View.GONE); }
