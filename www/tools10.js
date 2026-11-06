@@ -300,7 +300,7 @@ window.CLifeInit15 = function (CL) {
     if (p) listen(p);
     if (u.zip && p && p.otaApply && w && w.setServerBasePath && (u.need || 1) <= API) {
       if (busy) return; busy = true; lset('otaerr', ''); bar('⬇ 0%'); CL.toast('اپڈیٹ ڈاؤن لوڈ ہو رہی ہے…', 'Downloading update…');
-      p.otaApply({ url: u.zip, urls: zipUrls(u), build: u.n }).then(function (r) { busy = false; bar(null); lset('otaerr', ''); ready = { path: r.path, n: u.n }; lset('otaready', ready); CL.toast('اپڈیٹ تیار ہے: "ابھی لگائیں" دبائیں یا ایپ دوبارہ کھولیں', 'Update ready: tap "Apply now" or reopen the app'); if (S.view === 'diag') V.diag(); else if (S.view === 'life' && V.life) V.life(true); }).catch(fail);
+      p.otaApply({ url: u.zip, urls: zipUrls(u), build: u.n }).then(function (r) { busy = false; bar(null); lset('otaerr', ''); ready = { path: r.path, n: u.n }; lset('otaready', ready); CL.toast('اپڈیٹ تیار ہے: "ابھی لگائیں" دبائیں یا ایپ دوبارہ کھولیں', 'Update ready: tap "Apply now" or reopen the app'); if (S.view === 'diag') V.diag(); else if (S.view === 'life') { var mo = $('#modal'); if (!mo || mo.hidden) setTimeout(function () { if (S.view === 'life') applyReady(); }, 1500); } }).catch(fail);
     } else if (p && p.apkInstall) {
       if (busy) return; busy = true; bar('⬇ 0%'); CL.toast('نئی ایپ ڈاؤن لوڈ ہو رہی ہے…', 'Downloading the new app…');
       p.apkInstall({ url: u.url, urls: [u.url] }).then(function (r) { busy = false; bar(null); if (r && r.needPerm) CL.toast('"اس سورس سے انسٹال کی اجازت" آن کریں، پھر دوبارہ دبائیں', 'Allow installs from this app, then tap again'); }).catch(function (e) { fail(e); setTimeout(function () { CL.openUrl(u.url); }, 2500); });
@@ -321,7 +321,7 @@ window.CLifeInit15 = function (CL) {
   });
   function autoCheck() {
     var u = lget('upd', null), last = lget('updchk', 0);
-    if (Date.now() - last < 3 * 3600000) return;
+    if (Date.now() - last < 30 * 60000) return;
     lset('updchk', Date.now());
     if (CL.checkUpd) CL.checkUpd(true).then(function (x) { if (x && x.n > (window.CL_BUILD || 0) && x.zip && (x.need || 1) <= API && lget('otabad', 0) !== x.n) CL.doUpdate(x); });
   }
@@ -455,7 +455,7 @@ window.CLifeInit15 = function (CL) {
   }
   function fuelLoad(force) {
     var c = lget('fuel', null);
-    if (!force && c && Date.now() - c.t < 6 * 3600000) return Promise.resolve(c);
+    if (!force && c && Date.now() - c.t < 3600000) return Promise.resolve(c);
     return fetch(FQ, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('http'); return r.text(); }).then(function (x) {
       var list = fparse(x).slice(0, 12), p = fprice(list, /petrol/i), d = fprice(list, /diesel|hsd/i);
       var n = { t: Date.now(), list: list, petrol: p, diesel: d, prev: c && c.petrol && p && c.petrol.v !== p.v ? c.petrol.v : (c && c.prev) || null };
@@ -486,10 +486,10 @@ window.CLifeInit15 = function (CL) {
     var g = document.querySelector('#body .lgreet'), old = document.getElementById('fuelc'); if (old) old.remove(); if (!g) return;
     var c = lget('fuel', null); if (!c || !c.petrol) return;
     var ch = c.prev ? c.petrol.v - c.prev : 0;
-    g.insertAdjacentHTML('afterend', '<button class="card" id="fuelc" style="width:100%;display:flex;gap:12px;align-items:center;margin:8px 0;text-align:start"><span style="font-size:24px">⛽</span><div style="flex:1"><b>' + tt('پیٹرول', 'Petrol') + ' Rs. ' + c.petrol.v + '</b><small style="display:block;color:var(--mut);font-size:12.5px">' + (c.diesel ? tt('ڈیزل', 'Diesel') + ' Rs. ' + c.diesel.v : '') + '</small></div>' + (ch ? '<b style="color:' + (ch < 0 ? '#22c55e' : '#ef4444') + ';direction:ltr">' + (ch < 0 ? '▼ ' : '▲ ') + Math.abs(ch).toFixed(2) + '</b>' : '') + '</button>');
+    g.insertAdjacentHTML('afterend', '<button class="card" id="fuelc" style="width:100%;display:flex;gap:12px;align-items:center;margin:8px 0;text-align:start"><span style="font-size:24px">⛽</span><div style="flex:1"><b>' + tt('پیٹرول', 'Petrol') + ' Rs. ' + c.petrol.v + '</b><small style="display:block;color:var(--mut);font-size:12.5px">' + (c.diesel ? tt('ڈیزل', 'Diesel') + ' Rs. ' + c.diesel.v : '') + '</small></div>' + (ch ? '<b style="color:' + (ch < 0 ? '#22c55e' : '#ef4444') + ';direction:ltr">' + (ch < 0 ? '▼ ' : '▲ ') + Math.abs(ch).toFixed(2) + '</b>' : '<small style="color:var(--mut);direction:ltr">' + new Date(c.t).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }) + '</small>') + '</button>');
     document.getElementById('fuelc').onclick = function () { CL.go('fuel'); };
   });
-  setTimeout(function () { var c = lget('fuel', null); if (!c || Date.now() - c.t > 6 * 3600000) fuelLoad(false); }, 7000);
+  setTimeout(function () { var c = lget('fuel', null); if (!c || Date.now() - c.t > 3600000) fuelLoad(false); }, 7000);
 
   if (CL.wrapTools) CL.wrapTools();
 };
