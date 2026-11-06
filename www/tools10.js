@@ -438,5 +438,58 @@ window.CLifeInit15 = function (CL) {
     news(); if (CL.newsRefresh) CL.newsRefresh(false).then(news, function () { /* offline */ });
   };
 
+  /* ---------- fuel rate (from the latest Pakistan news headlines) ---------- */
+  CL.regTool('fuel', '⛽', 1, ['پیٹرول کی قیمت', 'Fuel rate'], 'money', ['پیٹرول، ڈیزل کی تازہ قیمت اور خرچ کا حساب', 'Latest petrol and diesel price and a cost calculator'], 'پیٹرول petrol ڈیزل diesel fuel قیمت price rate ریٹ ایندھن', true);
+  var FQ = 'https://news.google.com/rss/search?q=petrol+price+Pakistan+per+litre+OGRA&hl=en-PK&gl=PK&ceid=PK:en';
+  function fparse(xml) {
+    var doc = new DOMParser().parseFromString(xml, 'text/xml'), out = [];
+    [].forEach.call(doc.getElementsByTagName('item'), function (n) {
+      var g = function (t) { var e = n.getElementsByTagName(t)[0]; return e ? e.textContent : ''; };
+      var t = g('title'), l = g('link'), d = Date.parse(g('pubDate')) || 0; if (t && /^https?:/.test(l)) out.push({ t: t, l: l, d: d });
+    });
+    return out.sort(function (a, b) { return b.d - a.d; });
+  }
+  function fprice(list, re) {
+    for (var i = 0; i < list.length; i++) { var t = list[i].t; if (!re.test(t)) continue; var m = /Rs\.?\s?(\d{3}(?:\.\d{1,2})?)/i.exec(t); if (m) return { v: +m[1], t: list[i].t, l: list[i].l, d: list[i].d }; }
+    return null;
+  }
+  function fuelLoad(force) {
+    var c = lget('fuel', null);
+    if (!force && c && Date.now() - c.t < 6 * 3600000) return Promise.resolve(c);
+    return fetch(FQ, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('http'); return r.text(); }).then(function (x) {
+      var list = fparse(x).slice(0, 12), p = fprice(list, /petrol/i), d = fprice(list, /diesel|hsd/i);
+      var n = { t: Date.now(), list: list, petrol: p, diesel: d, prev: c && c.petrol && p && c.petrol.v !== p.v ? c.petrol.v : (c && c.prev) || null };
+      if (list.length) lset('fuel', n); return list.length ? n : c;
+    }).catch(function () { return c; });
+  }
+  V.fuel = function () {
+    begin('fuel', T('پیٹرول کی قیمت', 'Fuel rate'));
+    $('#body').innerHTML = '<div class="card" style="margin-top:8px" id="fbox"><span class="mut">…</span></div><div id="fcalc"></div><div class="sec">' + tt('تازہ خبریں', 'LATEST HEADLINES') + '</div><div class="card" id="fnews"></div>' +
+      note(tt('قیمتیں خبروں کی سرخیوں سے لی جاتی ہیں، اوگرا کے سرکاری نوٹیفکیشن سے نہیں۔ ادائیگی یا حساب سے پہلے سرکاری قیمت دیکھ لیں۔', 'Prices are read from news headlines, not from the official OGRA notification. Check the official price before you rely on it.')) + CL.footer();
+    function paint(c) {
+      var b = $('#fbox'); if (!b) return;
+      if (!c || !c.list || !c.list.length) { b.innerHTML = '<span class="mut">' + tt('قیمت نہیں مل سکی، انٹرنیٹ دیکھیں', 'Could not get the price, check the internet') + '</span><button class="btn o" id="frf">⟳ ' + tt('دوبارہ', 'Retry') + '</button>'; $('#frf').onclick = function () { fuelLoad(true).then(paint); }; return; }
+      var P = c.petrol, D = c.diesel, ch = P && c.prev ? P.v - c.prev : 0;
+      b.innerHTML = '<div class="kv" style="border:0"><span style="font-size:17px">⛽ ' + tt('پیٹرول', 'Petrol') + '</span><b style="font-size:26px;direction:ltr">' + (P ? 'Rs. ' + P.v : '–') + '</b></div>' + (ch ? '<div style="text-align:end;color:' + (ch < 0 ? '#22c55e' : '#ef4444') + ';direction:ltr;font-size:13px">' + (ch < 0 ? '▼ ' : '▲ ') + Math.abs(ch).toFixed(2) + '</div>' : '') +
+        '<div class="kv"><span>🛢 ' + tt('ڈیزل', 'Diesel') + '</span><b style="direction:ltr">' + (D ? 'Rs. ' + D.v : '–') + '</b></div><div class="mut" style="font-size:12px;margin-top:6px">' + tt('آخری اپ ڈیٹ: ', 'Updated: ') + new Date(c.t).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }) + (P ? ' · ' + new Date(P.d).toLocaleDateString('en', { day: 'numeric', month: 'short' }) : '') + '</div><button class="btn o" id="frf">⟳ ' + tt('تازہ کریں', 'Refresh') + '</button>';
+      $('#frf').onclick = function () { fuelLoad(true).then(paint); };
+      var pr = P ? P.v : (D ? D.v : 0);
+      $('#fcalc').innerHTML = pr ? '<div class="card"><b>' + tt('خرچ کا حساب', 'Cost calculator') + '</b><input id="fl" inputmode="decimal" placeholder="' + tt('لیٹر', 'Litres') + '" style="' + INP + '"><div id="flr" class="center" style="font-size:18px;font-weight:700;margin:8px 0;direction:ltr">–</div><input id="fr" inputmode="numeric" placeholder="' + tt('رقم (روپے)', 'Amount (Rs.)') + '" style="' + INP + '"><div id="frr" class="center" style="font-size:18px;font-weight:700;margin-top:8px;direction:ltr">–</div></div>' : '';
+      if (pr) { $('#fl').oninput = function () { var v = +this.value; $('#flr').textContent = v ? 'Rs. ' + Math.round(v * pr).toLocaleString('en') : '–'; }; $('#fr').oninput = function () { var v = +this.value; $('#frr').textContent = v ? (v / pr).toFixed(2) + ' L' : '–'; }; }
+      $('#fnews').innerHTML = c.list.slice(0, 6).map(function (x) { return '<div class="kv" style="border:0;padding:6px 0"><a data-fn="' + esc(x.l) + '" style="flex:1;cursor:pointer;direction:ltr;text-align:left;font-size:13.5px">' + esc(x.t) + '</a></div>'; }).join('');
+      [].forEach.call(document.querySelectorAll('[data-fn]'), function (a) { a.onclick = function () { var W = CL.webOpen2; if (W) W(a.dataset.fn, T('خبر', 'News')); else CL.openUrl(a.dataset.fn); }; });
+    }
+    var c0 = lget('fuel', null); if (c0) paint(c0);
+    fuelLoad(!c0 || Date.now() - c0.t > 600000).then(paint);
+  };
+  (CL.homeHooks = CL.homeHooks || []).push(function () {
+    var g = document.querySelector('#body .lgreet'), old = document.getElementById('fuelc'); if (old) old.remove(); if (!g) return;
+    var c = lget('fuel', null); if (!c || !c.petrol) return;
+    var ch = c.prev ? c.petrol.v - c.prev : 0;
+    g.insertAdjacentHTML('afterend', '<button class="card" id="fuelc" style="width:100%;display:flex;gap:12px;align-items:center;margin:8px 0;text-align:start"><span style="font-size:24px">⛽</span><div style="flex:1"><b>' + tt('پیٹرول', 'Petrol') + ' Rs. ' + c.petrol.v + '</b><small style="display:block;color:var(--mut);font-size:12.5px">' + (c.diesel ? tt('ڈیزل', 'Diesel') + ' Rs. ' + c.diesel.v : '') + '</small></div>' + (ch ? '<b style="color:' + (ch < 0 ? '#22c55e' : '#ef4444') + ';direction:ltr">' + (ch < 0 ? '▼ ' : '▲ ') + Math.abs(ch).toFixed(2) + '</b>' : '') + '</button>');
+    document.getElementById('fuelc').onclick = function () { CL.go('fuel'); };
+  });
+  setTimeout(function () { var c = lget('fuel', null); if (!c || Date.now() - c.t > 6 * 3600000) fuelLoad(false); }, 7000);
+
   if (CL.wrapTools) CL.wrapTools();
 };
