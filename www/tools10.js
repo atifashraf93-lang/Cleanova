@@ -344,12 +344,17 @@ window.CLifeInit15 = function (CL) {
         var at = new Date(t.getTime() - k[0] * 86400000); if (at.getTime() > Date.now()) n.push({ id: 7410 + (i++), title: 'Cleanova Life', body: BC[b.co][0] + ' ' + tt('بل ' + k[1], 'bill' + k[2]) + (b.amt ? ' · Rs. ' + b.amt : ''), schedule: { at: at, allowWhileIdle: true } });
       });
     });
+    d.items.forEach(function (b, j) {
+      var day = billDay(b);
+      n.push({ id: 7430 + j, title: 'Cleanova Life', body: BC[b.co][1] + ' ' + BC[b.co][0] + ': ' + tt('نیا بل آنے کا وقت ہے، بل دیکھیں', 'time to check your new bill'), schedule: { on: { day: day, hour: 10, minute: 0 }, allowWhileIdle: true } });
+    });
     try {
-      var ids = []; for (var k = 7410; k < 7430; k++) ids.push({ id: k });
+      var ids = []; for (var k = 7410; k < 7450; k++) ids.push({ id: k });
       var go = function () { if (n.length) U.scheduleLN(n); };
       if (CL.LN && CL.LN.cancel) CL.LN.cancel({ notifications: ids }).then(go, go); else go();
     } catch (e) { /* ignore */ }
   }
+  function billDay(b) { var d = +b.rd; if (d >= 1 && d <= 28) return d; var m = /-(\d{2})$/.exec(b.due || ''); return m ? Math.max(1, Math.min(28, +m[1] - 7)) : 5; }
   function bsheet(h) { var m = $('#modal'); m.hidden = false; $('#sheet').innerHTML = '<div style="max-height:80vh;overflow-y:auto">' + h + '</div>'; }
   var INP = 'width:100%;min-height:46px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:15px;margin-top:8px;direction:ltr';
   /* "SSGC 4498860000 1050 2026-11-02, KWSB G0280405000, KE 0400010029501 10241 2026-11-10" */
@@ -376,12 +381,12 @@ window.CLifeInit15 = function (CL) {
       '<input id="bn" inputmode="text" placeholder="' + tt('کنزیومر / اکاؤنٹ نمبر', 'Consumer / account number') + '" value="' + esc(b.num || '') + '" style="' + INP + '">' +
       '<input id="ba" inputmode="numeric" placeholder="' + tt('بل کی رقم (روپے)', 'Bill amount (Rs.)') + '" value="' + (b.amt || '') + '" style="' + INP + '">' +
       '<input id="bd" type="date" value="' + (b.due || '') + '" style="' + INP + '">' +
-      '<input id="bu" placeholder="' + tt('بل دیکھنے کا لنک (اختیاری)', 'Bill page link (optional)') + '" value="' + esc(b.url || '') + '" style="' + INP + '">' +
+      '<div class="mut" style="font-size:12.5px;margin-top:8px">' + tt('ہر مہینے نئے بل کی یاد دہانی (تاریخ 1 سے 28)', 'Monthly reminder to check the new bill (day 1 to 28)') + '</div><input id="brd" inputmode="numeric" placeholder="5" value="' + (b.co && b.num ? billDay(b) : '') + '" style="' + INP + '"><input id="bu" placeholder="' + tt('بل دیکھنے کا لنک (اختیاری)', 'Bill page link (optional)') + '" value="' + esc(b.url || '') + '" style="' + INP + '">' +
       '<button class="btn" id="bsv">' + tt('محفوظ کریں', 'Save') + '</button>' + (i != null ? '<button class="btn o" id="bdl" style="color:var(--red)">' + tt('ہٹائیں', 'Remove') + '</button>' : ''));
     [].forEach.call(document.querySelectorAll('[data-bco]'), function (x) { x.onclick = function () { b.co = x.dataset.bco; [].forEach.call(document.querySelectorAll('[data-bco]'), function (y) { y.classList.toggle('on', y === x); }); }; });
     $('#bsv').onclick = function () {
       var n = $('#bn').value.replace(/[^A-Za-z0-9]/g, ''); if (!n) { CL.toast('نمبر لکھیں', 'Enter the number'); return; }
-      var it = { co: b.co, num: n, amt: +$('#ba').value || 0, due: $('#bd').value || '', url: ($('#bu').value || '').trim(), paid: b.paid && b.due === $('#bd').value && b.amt === (+$('#ba').value || 0) };
+      var it = { co: b.co, num: n, amt: +$('#ba').value || 0, due: $('#bd').value || '', url: ($('#bu').value || '').trim(), rd: Math.max(1, Math.min(28, +$('#brd').value || 0)) || 0, paid: b.paid && b.due === $('#bd').value && b.amt === (+$('#ba').value || 0) };
       if (i == null) d.items.push(it); else d.items[i] = it;
       bsave(d); $('#modal').hidden = true; V.bills();
     };
@@ -404,7 +409,7 @@ window.CLifeInit15 = function (CL) {
     d.items.forEach(function (b, i) {
       var left = dleft(b.due), st = b.paid ? ['✅', tt('ادا ہو گیا', 'Paid'), '#22c55e'] : left == null ? ['', '', 'var(--mut)'] : left < 0 ? ['⚠️', tt('آخری تاریخ گزر گئی (' + (-left) + ' دن)', 'Overdue (' + (-left) + ' days)'), '#ef4444'] : left <= 3 ? ['⏰', tt(left + ' دن باقی', left + ' days left'), '#f59e0b'] : ['', tt(left + ' دن باقی', left + ' days left'), 'var(--mut)'];
       h += '<div class="card"><div class="kv" style="border:0"><span style="font-size:17px"><b>' + BC[b.co][1] + ' ' + BC[b.co][0] + '</b></span><b style="direction:ltr;font-size:20px">' + (b.amt ? 'Rs. ' + b.amt.toLocaleString('en') : '–') + '</b></div>' +
-        '<div class="kv" style="border:0"><span class="mut" style="direction:ltr">' + esc(b.num) + '</span><span style="color:' + st[2] + '">' + st[0] + ' ' + st[1] + '</span></div>' + (b.due ? '<div class="mut" style="font-size:12.5px;direction:ltr">' + tt('آخری تاریخ: ', 'Due: ') + b.due + '</div>' : '') +
+        '<div class="kv" style="border:0"><span class="mut" style="direction:ltr">' + esc(b.num) + '</span><span style="color:' + st[2] + '">' + st[0] + ' ' + st[1] + '</span></div>' + (b.due ? '<div class="mut" style="font-size:12.5px;direction:ltr">' + tt('آخری تاریخ: ', 'Due: ') + b.due + '</div>' : '') + '<div class="mut" style="font-size:12.5px">🔔 ' + tt('ہر مہینے ' + billDay(b) + ' تاریخ کو یاد دہانی', 'Reminder on day ' + billDay(b) + ' every month') + '</div>' +
         '<div class="chips"><button class="chip on" data-bo="' + i + '">🔎 ' + tt('بل دیکھیں', 'View bill') + '</button><button class="chip" data-bp="' + i + '">' + (b.paid ? tt('↺ باقی کریں', '↺ Unpaid') : '✔ ' + tt('ادا کر دیا', 'Mark paid')) + '</button><button class="chip" data-be="' + i + '">✎ ' + tt('درست کریں', 'Edit') + '</button></div></div>';
     });
     h += '<button class="btn" id="bad">＋ ' + tt('بل شامل کریں', 'Add bill') + '</button><button class="btn o" id="bim">📋 ' + tt('سب نمبر ایک ساتھ ڈالیں', 'Paste all numbers') + '</button>';
@@ -413,6 +418,7 @@ window.CLifeInit15 = function (CL) {
       var by = {}; hist.forEach(function (x) { by[x.m] = (by[x.m] || 0) + x.a; }); var ms = Object.keys(by).sort().slice(-6), mx = Math.max.apply(null, ms.map(function (k) { return by[k]; })) || 1;
       h += '<div class="sec">' + tt('پچھلے مہینے', 'PAST MONTHS') + '</div><div class="card">' + ms.map(function (k) { return '<div class="kv" style="border:0"><span style="direction:ltr">' + k + '</span><b style="direction:ltr">Rs. ' + by[k].toLocaleString('en') + '</b></div><div class="mbar" style="margin-top:0"><i style="width:' + (by[k] / mx * 100) + '%;background:#38bdf8"></i></div>'; }).join('') + '</div>';
     }
+    h += '<div class="sec">' + tt('بلز کی خبریں', 'BILLS NEWS') + '</div><div class="card" id="bnews"><span class="mut">…</span></div>';
     h += '<p class="note">' + tt('نمبر صرف آپ کے فون میں رہتے ہیں۔ "بل دیکھیں" دبانے پر نمبر کاپی ہو جاتا ہے اور کمپنی کی اصل سائٹ کھلتی ہے، کیپچا ہو تو آپ خود لکھیں۔ رقم اور تاریخ بل دیکھ کر درست کر دیں تو یاد دہانی خود لگ جاتی ہے (آخری تاریخ سے 3 دن پہلے اور اسی دن)۔', 'Numbers stay on your phone. "View bill" copies the number and opens the company\'s own site; type the captcha yourself if asked. Enter the amount and due date and reminders are set for 3 days before and on the due date.') + '</p>' + CL.footer();
     $('#body').innerHTML = h;
     [].forEach.call(document.querySelectorAll('[data-bo]'), function (x) { x.onclick = function () { openBill(d.items[+x.dataset.bo]); }; });
@@ -423,6 +429,13 @@ window.CLifeInit15 = function (CL) {
       bsave(d); V.bills();
     }; });
     $('#bad').onclick = function () { editBill(null); }; $('#bim').onclick = importSheet;
+    function news() {
+      var el = $('#bnews'); if (!el) return; var l = CL.newsBills ? CL.newsBills() : [];
+      el.innerHTML = l.length ? l.map(function (x) { return '<div class="kv" style="border:0;padding:6px 0"><a data-nl2="' + esc(x.l) + '" style="flex:1;cursor:pointer;direction:ltr;text-align:left;font-size:13.5px">' + esc(x.t) + '</a></div>'; }).join('') + '<button class="btn o" id="bnall">' + tt('سب خبریں', 'All bills news') + '</button>' : '<span class="mut">' + tt('ابھی کوئی خبر نہیں', 'No news yet') + '</span>';
+      [].forEach.call(el.querySelectorAll('[data-nl2]'), function (a) { a.onclick = function () { var W = CL.webOpen2; if (W) W(a.dataset.nl2, T('خبر', 'News')); else CL.openUrl(a.dataset.nl2); }; });
+      var all = $('#bnall'); if (all) all.onclick = function () { if (CL.newsCat) CL.newsCat('bills'); CL.go('news'); };
+    }
+    news(); if (CL.newsRefresh) CL.newsRefresh(false).then(news, function () { /* offline */ });
   };
 
   if (CL.wrapTools) CL.wrapTools();

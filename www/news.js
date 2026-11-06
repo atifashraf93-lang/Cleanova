@@ -15,10 +15,11 @@ window.CLifeInit3 = function (CL) {
     { id: 'ary', n: ['اے آر وائی نیوز', 'ARY News'], f: [['https://arynews.tv/feed/', 'pk']] },
     { id: 'bbcurdu', n: ['بی بی سی اردو', 'BBC Urdu'], f: [['https://feeds.bbci.co.uk/urdu/rss.xml', 'urdu']] },
     { id: 'bbc', n: ['بی بی سی نیوز', 'BBC News'], f: [['https://feeds.bbci.co.uk/news/world/rss.xml', 'world'], ['https://feeds.bbci.co.uk/news/business/rss.xml', 'biz'], ['https://feeds.bbci.co.uk/news/technology/rss.xml', 'tech'], ['https://feeds.bbci.co.uk/sport/rss.xml', 'sport']] },
-    { id: 'aj', n: ['الجزیرہ', 'Al Jazeera'], f: [['https://www.aljazeera.com/xml/rss/all.xml', 'world']] }
+    { id: 'aj', n: ['الجزیرہ', 'Al Jazeera'], f: [['https://www.aljazeera.com/xml/rss/all.xml', 'world']] },
+    { id: 'gnews', n: ['بلز کی خبریں (گوگل نیوز)', 'Bills news (Google News)'], f: [['https://news.google.com/rss/search?q=%22K-Electric%22+OR+KE+tariff+OR+NEPRA+OR+%22load+shedding%22+Karachi&hl=en-PK&gl=PK&ceid=PK:en', 'bills'], ['https://news.google.com/rss/search?q=SSGC+OR+%22gas+tariff%22+OR+OGRA+OR+%22gas+price%22+Pakistan&hl=en-PK&gl=PK&ceid=PK:en', 'bills'], ['https://news.google.com/rss/search?q=KWSC+OR+%22Karachi+Water%22+OR+%22water+board%22+Karachi+bill&hl=en-PK&gl=PK&ceid=PK:en', 'bills']] }
   ];
-  var CATS = [['all', ['سب', 'All']], ['pk', ['پاکستان', 'Pakistan']], ['urdu', ['اردو', 'Urdu']], ['world', ['دنیا', 'World']], ['sport', ['کھیل', 'Sport']], ['biz', ['کاروبار', 'Business']], ['tech', ['ٹیکنالوجی', 'Tech']]];
-  var CAT_IC = { pk: '🇵🇰', urdu: '📰', world: '🌍', sport: '🏏', biz: '💹', tech: '💻' };
+  var CATS = [['all', ['سب', 'All']], ['pk', ['پاکستان', 'Pakistan']], ['urdu', ['اردو', 'Urdu']], ['world', ['دنیا', 'World']], ['sport', ['کھیل', 'Sport']], ['biz', ['کاروبار', 'Business']], ['tech', ['ٹیکنالوجی', 'Tech']], ['bills', ['بلز', 'Bills']]];
+  var CAT_IC = { pk: '🇵🇰', urdu: '📰', world: '🌍', sport: '🏏', biz: '💹', tech: '💻', bills: '🧾' };
   function catName(c) { for (var i = 0; i < CATS.length; i++) if (CATS[i][0] === c) return tt(CATS[i][1][0], CATS[i][1][1]); return c; }
 
   /* ---------- preferences ---------- */
@@ -50,6 +51,8 @@ window.CLifeInit3 = function (CL) {
     });
     return out;
   }
+  CL.newsBills = function () { return items('bills').sort(function (a, b) { return b.d - a.d; }).slice(0, 5); };
+  CL.newsRefresh = function (f) { return refresh(f); };
   var busy = null;
   function refresh(force) {
     var c = lget('news.cache', null);
@@ -74,7 +77,7 @@ window.CLifeInit3 = function (CL) {
   }
   function ago(t) { if (!t) return ''; var m = Math.max(0, Math.round((Date.now() - t) / 60000)); return m < 2 ? tt('ابھی', 'just now') : m < 60 ? m + tt(' منٹ', ' min') : m < 1440 ? Math.round(m / 60) + tt(' گھنٹے', ' h') : Math.round(m / 1440) + tt(' دن', ' d'); }
   function oname(id) { for (var i = 0; i < OUTLETS.length; i++) if (OUTLETS[i].id === id) return tt(OUTLETS[i].n[0], OUTLETS[i].n[1]); return id; }
-  function items(cat) { var c = lget('news.cache', null); if (!c) return []; var on = srcOn(); return c.items.filter(function (i) { return on.indexOf(i.o) >= 0 && (cat === 'all' || i.c === cat); }); }
+  function items(cat) { var c = lget('news.cache', null); if (!c) return []; var on = srcOn(); return c.items.filter(function (i) { return (on.indexOf(i.o) >= 0 || i.o === 'gnews') && (cat === 'all' ? i.c !== 'bills' : i.c === cat); }); }
   function homeItems() {
     var hc = hcats(), n = P('count', 4), per = {}, out = [];
     items('all').forEach(function (i) { if (hc.indexOf(i.c) < 0) return; per[i.c] = per[i.c] || 0; if (per[i.c] < Math.max(2, Math.ceil(n / Math.max(1, hc.length)))) { per[i.c]++; out.push(i); } });
@@ -156,6 +159,7 @@ window.CLifeInit3 = function (CL) {
 
   /* ---------- news tab ---------- */
   var NF = { cat: 'all' };
+  CL.newsCat = function (c) { NF.cat = c; };
   function seg(cur) {
     return '<div class="chips" style="margin-top:8px"><button class="chip' + (cur === 'news' ? ' on' : '') + '" data-nv="news">📰 ' + tt('خبریں', 'News') + '</button><button class="chip' + (cur === 'tv' ? ' on' : '') + '" data-nv="tv">📺 ' + tt('لائیو چینل', 'Live channels') + '</button><button class="chip" data-nv="newsset" aria-label="settings">⚙</button></div>';
   }
