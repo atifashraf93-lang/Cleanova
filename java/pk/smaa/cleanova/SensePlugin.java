@@ -181,7 +181,7 @@ public class SensePlugin extends Plugin {
     @PluginMethod
     public void otaApply(final PluginCall call) {
         final java.util.List<String> list = urls(call);
-        final long build = call.getLong("build", 0L);
+        final long build = call.getData().optLong("build", 0L);
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
