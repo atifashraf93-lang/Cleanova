@@ -678,9 +678,11 @@
       '<div class="card"><button class="cat" id="prbtn" style="padding:6px 0"><span class="t"><b>' + tt('پرائیویسی، لاک اور ڈسپلے', 'Privacy, lock and display') + '</b><small class="e" style="display:block">' + tt('پن، فنگر پرنٹ، بڑے حروف', 'PIN, fingerprint, large text') + '</small></span><span>›</span></button></div>' +
       '<div class="card"><button class="cat" id="bkbtn" style="padding:6px 0"><span class="t"><b>' + tt('بیک اپ اور بحالی', 'Backup and restore') + '</b><small class="e" style="display:block">' + tt('صحت، خرچ، یاد دہانیاں محفوظ کریں', 'Save health, expenses, reminders') + '</small></span><span>›</span></button></div>' +
       '<div class="card"><div class="mut">' + tt('اب تک کل صفائی', 'Total cleaned so far') + '</div><div class="big">' + fmt(store('freed') || 0) + '</div></div>' +
+      (window.LifeStats ? '<div class="card">' + '<div class="row"><div class="t"><b>' + tt('گمنام استعمال کی گنتی', 'Anonymous usage counts') + '</b><small class="e" style="display:block">' + tt('صرف کھولنے کی تعداد اور ورژن۔ نام، نمبر، پیغام، تصاویر یا لوکیشن کبھی نہیں جاتے۔', 'Only open counts and version. Never your name, number, messages, photos or location.') + '</small></div><button class="sw" id="stsw" aria-pressed="' + window.LifeStats.on() + '" aria-label="usage counts"></button></div></div>' : '') +
       '<div class="card"><button class="cat" id="dgbtn" style="padding:6px 0"><span class="t"><b>🩺 ' + tt('سیٹ اپ اور ہیلتھ چیک', 'Setup and health check') + '</b><small class="e" style="display:block">' + tt('نوٹیفکیشن، بیٹری، کنکشن اور ورژن چیک کریں', 'Check notifications, battery, connection and version') + '</small></span></button></div>';
     $('#body').innerHTML = h;
     $('#dgbtn').onclick = function () { go('diag'); };
+    if ($('#stsw')) $('#stsw').onclick = function () { window.LifeStats.set(!window.LifeStats.on()); vSettings(); };
     [].forEach.call(document.querySelectorAll('[data-pref]'), function (b) {
       b.onclick = function () {
         var k = b.dataset.pref, v = b.dataset.v; v = isNaN(+v) ? v : +v;
