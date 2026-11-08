@@ -524,4 +524,5 @@ window.CLifeInit2 = function (CL) {
   if (window.CLifeInit13) window.CLifeInit13(CL);
   if (window.CLifeInit14) window.CLifeInit14(CL);
   if (window.CLifeInit15) window.CLifeInit15(CL);
+  if (window.CLifeInit16) window.CLifeInit16(CL);
 };
