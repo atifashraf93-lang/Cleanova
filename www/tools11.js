@@ -22,6 +22,7 @@ window.CLifeInit16 = function (CL) {
     });
   }
   CL.driveHide = drive;
+  var SN = function () { return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Sense; };
   function el(id) { return document.getElementById(id); }
   function card() { return el('spdc'); }
 
@@ -56,6 +57,7 @@ window.CLifeInit16 = function (CL) {
       '<div style="font:700 15px system-ui"><span id="spdt">0:00</span><small style="display:block;font:11px system-ui;opacity:.6;font-weight:400">' + tt('وقت', 'Time') + '</small></div>' +
       '<div style="font:700 15px system-ui"><span id="spda">–</span><small style="display:block;font:11px system-ui;opacity:.6;font-weight:400">' + tt('اوسط', 'Average') + '</small></div>' +
       '<div style="font:700 15px system-ui"><span id="spdm">0</span><small style="display:block;font:11px system-ui;opacity:.6;font-weight:400">' + tt('زیادہ سے زیادہ', 'Top') + '</small></div></div>' +
+      '<button id="spdo" style="margin-top:10px;border:0;border-radius:14px;padding:8px 14px;background:#1f6f5a;color:#fff;font-size:13px">' + tt('📲 باہر دکھائیں', '📲 Show outside the app') + '</button> ' +
       '<button id="spdend" style="margin-top:10px;border:0;border-radius:14px;padding:8px 18px;background:#2a3d63;color:#e8eef9;font-size:13px">' + tt('ختم کریں', 'Done') + '</button>' +
       '<div style="font-size:10.5px;opacity:.55;margin-top:8px">' + tt('گاڑی چلاتے وقت اسکرین نہ دیکھیں۔ حد آپ کی اپنی مقرر کردہ ہے، سڑک کی سرکاری حد نہیں۔', 'Do not look at the screen while driving. The limit is the one you set, not the road\'s official limit.') + '</div></div>';
   }
@@ -92,6 +94,7 @@ window.CLifeInit16 = function (CL) {
     var x = el('spdx'), e = el('spdend'), l = el('spdl'), c = card();
     if (x) x.onclick = function (ev) { ev.stopPropagation(); lset('spd.auto', false); stop(); mount(); CL.toast('رفتار کارڈ بند۔ دوبارہ چالو کرنے کے لیے اس جگہ ٹیپ کریں', 'Speed card off. Tap here to turn it on again'); };
     if (e) e.onclick = function () { G.big = false; reset(); mount(); };
+    var o = el('spdo'); if (o) o.onclick = function () { CL.speedOut(true); };
     if (l) l.onclick = function () { var L = lim(), i = LIMS.indexOf(L); lset('splim', LIMS[(i + 1) % LIMS.length]); l.textContent = lim() ? tt('حد: ', 'Limit: ') + lim() + ' ✎' : tt('حد لگائیں ✎', 'Set limit ✎'); };
     if (c && !G.big) c.onclick = function (ev) { if (ev.target.closest('#spdx')) return; if (!G.w) { lset('spd.auto', true); start(true); } else CL.go('speed'); };
   }
@@ -131,6 +134,43 @@ window.CLifeInit16 = function (CL) {
     if (document.hidden) stop();
     else if (card() && auto()) start(false);
   });
+
+  /* ---- speed outside the app: notification and floating circle (needs the native part from build 54) ---- */
+  CL.speedOut = function (bubble, cb) {
+    var p = SN();
+    if (!p || !p.speedStart) { CL.toast('اس کے لیے ایپ کا نیا ورژن (APK) انسٹال کریں', 'This needs the new app version (APK)'); return; }
+    function go(bub) {
+      p.speedStart({ limit: lim(), mph: isMph(), bubble: bub }).then(function (r) {
+        CL.toast(r && r.bubble ? 'رفتار نوٹیفکیشن اور تیرتے بلبلے میں چل رہی ہے' : (bubble ? 'بلبلے کی اجازت نہیں ملی، صرف نوٹیفکیشن چل رہا ہے' : 'رفتار نوٹیفکیشن میں چل رہی ہے'), r && r.bubble ? 'Speed is showing in the notification and floating circle' : 'Speed is showing in the notification');
+        if (cb) cb();
+      }).catch(function (e) { CL.toast('شروع نہیں ہو سکا: ' + String((e && e.message) || e).slice(0, 80), 'Could not start: ' + String((e && e.message) || e).slice(0, 80)); });
+    }
+    function begin() {
+      if (!bubble) { go(false); return; }
+      p.speedState().then(function (st) {
+        if (st && st.overlay) go(true);
+        else { CL.toast('اگلی اسکرین میں "دوسری ایپس کے اوپر" کی اجازت آن کریں، پھر واپس آ کر دوبارہ دبائیں', 'Turn on "Display over other apps", then come back and tap again'); p.overlaySettings(); }
+      }).catch(function () { go(false); });
+    }
+    if (navigator.geolocation) navigator.geolocation.getCurrentPosition(begin, function (e) { if (e && e.code === 1) CL.toast('لوکیشن کی اجازت دیں', 'Allow location'); else begin(); }, { timeout: 15000, maximumAge: 60000 });
+    else begin();
+  };
+  CL.speedOutPaint = function () {
+    var box = el('spo'); if (!box) return;
+    var p = SN(), head = '<b>📲 ' + tt('باہر دکھائیں', 'Show outside the app') + '</b>';
+    if (!p || !p.speedStart) { box.innerHTML = head + '<p class="note">' + tt('اس کے لیے ایپ کا نیا ورژن چاہیے۔ نئی APK انسٹال کریں۔', 'This needs the new app version. Install the new APK.') + '</p>'; return; }
+    p.speedState().then(function (st) {
+      var run = st && st.running;
+      box.innerHTML = head + '<div class="mut" style="font-size:12.5px;margin-top:2px">' + tt('رفتار نوٹیفکیشن میں، اور دوسری ایپس (جیسے Google Maps) کے اوپر چھوٹے گول بلبلے میں', 'Speed in the notification and in a small circle over other apps (like Google Maps)') + '</div>' +
+        (run ? '<button class="btn" id="spoX" style="width:100%;margin-top:10px;background:#7a2530;color:#fff">⏹ ' + tt('باہر دکھانا بند کریں', 'Stop showing outside') + '</button>'
+          : '<div style="display:grid;gap:8px;margin-top:10px"><button class="btn" id="spoN">🔔 ' + tt('نوٹیفکیشن میں', 'In the notification') + '</button><button class="btn o" id="spoB">🫧 ' + tt('تیرتا بلبلہ اور نوٹیفکیشن', 'Floating circle and notification') + '</button></div>') +
+        '<p class="note">' + tt('بلبلے کو ہاتھ سے کہیں بھی لے جائیں۔ ٹیپ کریں تو Life کھلتی ہے، لمبا دبائیں تو بند ہو جاتا ہے۔ بیٹری کی بچت والے فونز میں Life کے لیے "کوئی پابندی نہیں" رکھیں۔', 'Drag the circle anywhere. Tap to open Life, long-press to stop. On phones with battery savers, set Life to "no restrictions".') + '</p>';
+      var again = function () { setTimeout(CL.speedOutPaint, 600); };
+      if (el('spoN')) el('spoN').onclick = function () { CL.speedOut(false, again); };
+      if (el('spoB')) el('spoB').onclick = function () { CL.speedOut(true, again); };
+      if (el('spoX')) el('spoX').onclick = function () { p.speedStop().then(again); };
+    }).catch(function () { /* ignore */ });
+  };
 
   (CL.homeHooks = CL.homeHooks || []).push(function () {
     if (S.view !== 'life') return;

@@ -35,7 +35,7 @@ import java.util.zip.ZipFile;
 @CapacitorPlugin(name = "Sense")
 public class SensePlugin extends Plugin {
     /** Bump this whenever the Java side changes in a way the web files depend on. */
-    static final int API = 3;
+    static final int API = 4;
     static final String OTA_PREFS = "cl.ota";
 
     private SensorManager sm;
@@ -110,6 +110,51 @@ public class SensePlugin extends Plugin {
             }
         } catch (Throwable t) { r.put("connected", false); r.put("err", String.valueOf(t)); }
         call.resolve(r);
+    }
+
+    /* ---------- speed outside the app (notification and floating circle) ---------- */
+    @PluginMethod
+    public void speedStart(PluginCall call) {
+        try {
+            if (Build.VERSION.SDK_INT >= 23 && ctx().checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) { call.reject("no location permission"); return; }
+            if (Build.VERSION.SDK_INT >= 33 && ctx().checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED && getActivity() != null) {
+                getActivity().requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 9211);
+            }
+            Intent i = new Intent(ctx(), SpeedService.class);
+            i.putExtra("limit", (int) call.getData().optLong("limit", 0L));
+            i.putExtra("mph", call.getBoolean("mph", false));
+            boolean bub = call.getBoolean("bubble", false) && (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(ctx()));
+            i.putExtra("bubble", bub);
+            if (Build.VERSION.SDK_INT >= 26) ctx().startForegroundService(i); else ctx().startService(i);
+            JSObject r = new JSObject();
+            r.put("bubble", bub);
+            call.resolve(r);
+        } catch (Throwable t) { call.reject("speed: " + t); }
+    }
+
+    @PluginMethod
+    public void speedStop(PluginCall call) {
+        try { ctx().stopService(new Intent(ctx(), SpeedService.class)); } catch (Throwable t) { /* ignore */ }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void speedState(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("running", SpeedService.running);
+        r.put("kmh", SpeedService.lastKmh);
+        r.put("overlay", Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(ctx()));
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void overlaySettings(PluginCall call) {
+        try {
+            Intent s = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx().getPackageName()));
+            s.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx().startActivity(s);
+            call.resolve();
+        } catch (Throwable t) { call.reject("overlay: " + t); }
     }
 
     /* ---------- download helper ---------- */

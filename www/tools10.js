@@ -116,6 +116,7 @@ window.CLifeInit15 = function (CL) {
       '<div class="kv"><span>' + tt('زیادہ سے زیادہ', 'Top speed') + '</span><b id="spmx">0</b></div><div class="kv"><span>' + tt('چلتے وقت اوسط', 'Average while moving') + '</span><b id="spav">0</b></div><div class="kv"><span>' + tt('فاصلہ', 'Distance') + '</span><b id="spd">0 km</b></div><div class="kv"><span>' + tt('وقت', 'Time') + '</span><b id="spt">0:00</b></div><div class="kv"><span>GPS</span><b id="spa">…</b></div></div>' +
       '<div class="card"><b>' + tt('رفتار کی حد (بیپ)', 'Speed limit (beep)') + '</b>' + chipsRow([[0, tt('بند', 'Off')], [40, '40'], [60, '60'], [80, '80'], [100, '100'], [120, '120']], lim, 'sl') +
       '<div class="chips"><button class="chip" id="spun">' + tt('یونٹ: ', 'Unit: ') + '<span id="spunt"></span></button><button class="chip" id="sphud">🪞 HUD</button><button class="chip" id="sprs">↺ ' + tt('ری سیٹ', 'Reset') + '</button></div></div>' +
+      '<div class="card" id="spo"></div>' +
       '<div class="card center" id="sptrip"><button class="btn o" id="sptr">🧭 ' + tt('سفر کا ریکارڈ کھولیں (راستہ بھی محفوظ ہو)', 'Open Travel Log (also saves the route)') + '</button></div>' +
       note('⚠️ ' + tt('گاڑی چلاتے وقت اسکرین نہ دیکھیں۔ فون ہولڈر میں لگائیں اور بیپ پر بھروسہ کریں۔ GPS کی رفتار سرنگ یا عمارت کے اندر درست نہیں ہوتی۔', 'Do not look at the screen while driving. Use a phone holder and rely on the beep. GPS speed is unreliable in tunnels or indoors.')) + '</div>' + CL.footer();
     function paint() {
@@ -155,6 +156,7 @@ window.CLifeInit15 = function (CL) {
     $('#sphud').onclick = function () { hud = !hud; $('#spbox').style.transform = hud ? 'scaleX(-1)' : ''; $('#sphud').classList.toggle('on', hud); };
     $('#sprs').onclick = function () { mx = 0; dist = 0; moveT = 0; t0 = Date.now(); hist = []; paint(); };
     $('#sptr').onclick = function () { S.tr = null; CL.go('trips'); };
+    if (CL.speedOutPaint) CL.speedOutPaint();
     paint();
   };
 
