@@ -493,8 +493,6 @@ window.CLifeInit2 = function (CL) {
     var foot = document.querySelector('#body .foot'); if (foot) foot.insertAdjacentHTML('beforebegin', moreGrid());
     var wc = lget('wcache', null), g = document.querySelector('.lgreet');
     if (g) { g.style.position = 'relative'; g.insertAdjacentHTML('beforeend', '<button id="wchip" class="sbtn" style="position:absolute;top:0;inset-inline-end:0;min-height:38px;padding:0 12px;direction:ltr">' + (wc && wc.cur ? wx(wc.cur.weather_code)[0] + ' ' + Math.round(wc.cur.temperature_2m) + '°' : '☁ --') + '</button>'); $('#wchip').onclick = function () { nav('weather'); }; }
-    var up = lget('upd', null); if (up && g && !soft) g.insertAdjacentHTML('afterend', '<button class="warn" id="updb" style="display:block;width:100%;text-align:start">⬆ ' + tt('نیا ورژن دستیاب ہے: ', 'New version available: ') + esc(up.tag) + '</button>');
-    if ($('#updb')) $('#updb').onclick = function () { openUrl(up.url); };
     bind('mv', function (v) { nav(v); });
     if (!soft && !lget('onb', false)) setTimeout(onboard, 600);
     if (!soft && !(wc && Date.now() - wc.t < 3600000)) loadWeather(false).then(function () { if (S.view === 'life') V.life(true); }).catch(function () { /* offline */ });
@@ -504,13 +502,7 @@ window.CLifeInit2 = function (CL) {
     $('#sheet').innerHTML = '<div class="logo" style="width:56px;height:56px;border-radius:17px;margin:0 auto 10px">' + ico('spark') + '</div><h2 style="text-align:center;font-size:21px">' + tt('Cleanova Life میں خوش آمدید', 'Welcome to Cleanova Life') + '</h2><ul style="margin:12px 18px;line-height:1.9;font-size:15px"><li>' + tt('سب کچھ آپ کے فون میں رہتا ہے', 'Everything stays on your phone') + '</li><li>' + tt('پروفائل بنائیں تاکہ ڈائٹ اور BMI نکلے', 'Create a profile for diet and BMI') + '</li><li>' + tt('ترتیبات میں تھیم، رنگ اور ایپ لاک', 'Theme, colour and app lock are in Settings') + '</li></ul><button class="btn" id="obp">' + T('پروفائل بنائیں', 'Create profile') + '</button><button class="sbtn" id="obl" style="width:100%;margin-top:10px">' + tt('بعد میں', 'Maybe later') + '</button>';
     $('#obl').onclick = function () { lset('onb', true); m.hidden = true; }; $('#obp').onclick = function () { lset('onb', true); m.hidden = true; nav('profile'); };
   }
-  /* update notice (works only when the release page is public) */
-  setTimeout(function () {
-    try {
-      var A = Cap && Cap.Plugins && Cap.Plugins.App; if (!A || window.CLEANOVA_MOCK) return;
-      A.getInfo().then(function (i) { var cur = parseInt(String(i.version).split('.').pop(), 10); return getJson('https://api.github.com/repos/atifashraf93-lang/Cleanova/releases/latest', 8000).then(function (r) { var n = parseInt(String(r.tag_name).replace(/\D/g, ''), 10); if (n > cur) lset('upd', { tag: r.tag_name, url: r.html_url }); else lset('upd', null); }); }).catch(function () { /* ignore */ });
-    } catch (e) { /* ignore */ }
-  }, 4000);
+  /* the update notice lives in tools9.js (upd) and tools10.js (doUpdate) */
   if (window.CLifeInit3) window.CLifeInit3(CL);
   if (window.CLifeInit4) window.CLifeInit4(CL);
   if (window.CLifeInit5) window.CLifeInit5(CL);

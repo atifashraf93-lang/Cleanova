@@ -83,7 +83,17 @@ window.CLifeInit14 = function (CL) {
   function upd(force) {
     var last = lget('upd', null);
     if (!force && last && Date.now() - last.t < 6 * 3600000) return Promise.resolve(last);
+    var RP = 'atifashraf93-lang/Cleanova';
+    /* GitHub's API is rate-limited on mobile networks; the small file on the ota branch is the fallback */
+    function viaFile() {
+      return fetch('https://raw.githubusercontent.com/' + RP + '/ota/latest.json?t=' + Date.now()).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j || !j.n) return last && last.n ? last : null;
+        var best = { n: +j.n, url: 'https://github.com/' + RP + '/releases/download/apk-' + j.n + '/Cleanova.apk', zip: 'https://github.com/' + RP + '/releases/download/apk-' + j.n + '/www.zip', need: +j.need || 1, sha: '', t: Date.now() };
+        lset('upd', best); return best;
+      }).catch(function () { return last && last.n ? last : null; });
+    }
     return fetch(REPO).then(function (r) { return r.json(); }).then(function (rs) {
+      if (!Array.isArray(rs)) throw new Error('api');
       var best = null;
       (rs || []).forEach(function (x) {
         var m = /^apk-(\d+)$/.exec(x.tag_name || ''); if (!m || !x.assets || (best && +m[1] <= best.n)) return;
@@ -93,12 +103,12 @@ window.CLifeInit14 = function (CL) {
       });
       if (best) lset('upd', best);
       return best;
-    }).catch(function () { return last; });
+    }).catch(viaFile);
   }
   CL.checkUpd = upd;
   (CL.homeHooks = CL.homeHooks || []).push(function () {
     var old = document.getElementById('updc'); if (old) old.remove();
-    var u = lget('upd', null); if (!BUILD || !u || u.n <= BUILD || S.view !== 'life') return;
+    var u = lget('upd', null); if (!BUILD || !u || !u.n || u.n <= BUILD || S.view !== 'life') return;
     var g = document.querySelector('#body .lgreet'); if (!g) return;
     g.insertAdjacentHTML('afterend', '<div class="card" id="updc" style="border-color:var(--acc);display:flex;gap:12px;align-items:center"><span style="font-size:26px">⬆️</span><div style="flex:1"><b>' + tt('نیا ورژن دستیاب', 'New version available') + '</b><small style="display:block;color:var(--mut);font-size:12.5px">' + tt('ورژن ', 'Version ') + u.n + '</small></div><button class="sbtn p" id="updb">' + (lget('otaready', null) ? tt('ابھی لگائیں', 'Apply now') : tt('اپڈیٹ کریں', 'Update')) + '</button></div>');
     $('#updb').onclick = function () { if (lget('otaready', null) && CL.applyOta) CL.applyOta(); else if (CL.doUpdate) CL.doUpdate(u); else CL.openUrl(u.url); };

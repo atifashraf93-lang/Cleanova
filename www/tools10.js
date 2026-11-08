@@ -277,6 +277,7 @@ window.CLifeInit15 = function (CL) {
   var REPOP = 'atifashraf93-lang/Cleanova';
   function zipUrls(u) {
     var l = [u.zip];
+    if (!u.sha) l.push('https://raw.githubusercontent.com/' + REPOP + '/ota/www.zip');
     if (u.sha) { l.push('https://cdn.jsdelivr.net/gh/' + REPOP + '@' + u.sha + '/www.zip'); l.push('https://raw.githubusercontent.com/' + REPOP + '/' + u.sha + '/www.zip'); }
     return l;
   }
@@ -301,10 +302,10 @@ window.CLifeInit15 = function (CL) {
     if (u.zip && p && p.otaApply && w && w.setServerBasePath && (u.need || 1) <= API) {
       if (busy) return; busy = true; lset('otaerr', ''); bar('⬇ 0%'); CL.toast('اپڈیٹ ڈاؤن لوڈ ہو رہی ہے…', 'Downloading update…');
       p.otaApply({ url: u.zip, urls: zipUrls(u), build: u.n }).then(function (r) { busy = false; bar(null); lset('otaerr', ''); ready = { path: r.path, n: u.n }; lset('otaready', ready); CL.toast('اپڈیٹ تیار ہے: "ابھی لگائیں" دبائیں یا ایپ دوبارہ کھولیں', 'Update ready: tap "Apply now" or reopen the app'); if (S.view === 'diag') V.diag(); else if (S.view === 'life') { var mo = $('#modal'); if (!mo || mo.hidden) setTimeout(function () { if (S.view === 'life') applyReady(); }, 1500); } }).catch(fail);
-    } else if (p && p.apkInstall) {
+    } else if (p && p.apkInstall && /\.apk(\?|$)/i.test(u.url || '')) {
       if (busy) return; busy = true; bar('⬇ 0%'); CL.toast('نئی ایپ ڈاؤن لوڈ ہو رہی ہے…', 'Downloading the new app…');
       p.apkInstall({ url: u.url, urls: [u.url] }).then(function (r) { busy = false; bar(null); if (r && r.needPerm) CL.toast('"اس سورس سے انسٹال کی اجازت" آن کریں، پھر دوبارہ دبائیں', 'Allow installs from this app, then tap again'); }).catch(function (e) { fail(e); setTimeout(function () { CL.openUrl(u.url); }, 2500); });
-    } else CL.openUrl(u.url);
+    } else if (u.url) CL.openUrl(u.url);
   };
   function applyReady() {
     var r = lget('otaready', null), w = wv(); if (!r || !w || !w.setServerBasePath) return false;
