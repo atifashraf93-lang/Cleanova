@@ -12,6 +12,16 @@ window.CLifeInit16 = function (CL) {
   function lim() { return +lget('splim', 0) || 0; }
   function cv(ms) { return ms * (isMph() ? 2.23694 : 3.6); }
   function auto() { return lget('spd.auto', true) !== false; }
+  function $b() { return document.getElementById('body'); }
+  /* while driving, hide the rest of Home; the hidden parts come back with a fresh Home render */
+  function drive() {
+    var b = $b(); if (!b) return;
+    [].forEach.call(b.children, function (e) {
+      var keep = e.classList.contains('lgreet') || e.id === 'spdc' || e.classList.contains('foot');
+      if (G.big && !keep) { e.dataset.drv = '1'; e.style.display = 'none'; } else if (e.dataset.drv) { delete e.dataset.drv; e.style.display = ''; }
+    });
+  }
+  CL.driveHide = drive;
   function el(id) { return document.getElementById(id); }
   function card() { return el('spdc'); }
 
@@ -73,8 +83,8 @@ window.CLifeInit16 = function (CL) {
     el('spdm').textContent = Math.round(cv(G.mx));
   }
   function mount() {
-    var old = card(), g = document.querySelector('#body .lgreet'); if (old) old.remove(); if (!g || S.view !== 'life') return false;
-    g.insertAdjacentHTML('afterend', html()); wire(); paint(); return true;
+    var old = card(), g = document.querySelector('#body .lgreet'); if (!g || S.view !== 'life') { if (old) old.remove(); return false; }
+    if (old) { old.insertAdjacentHTML('beforebegin', html()); old.remove(); } else g.insertAdjacentHTML('afterend', html()); drive(); wire(); paint(); return true;
   }
   function reset() { G.sp = 0; G.mx = 0; G.dist = 0; G.moveT = 0; G.t0 = 0; G.prev = null; G.fast = 0; G.slow = 0; }
   function setBig(b) { if (G.big === b) return; G.big = b; if (b && !G.t0) G.t0 = Date.now(); if (!b) reset(); mount(); }

@@ -19,7 +19,7 @@ srv.listen(8199, async () => {
     await p.evaluate(i => { CL.S.granted = true; CL.S.back = []; CL.S.view = i; CL.render(); }, id); await p.waitForTimeout(300);
     ok.push(id + ':' + (await p.evaluate(() => document.getElementById('body').innerText.length > 20)));
   }
-  for (const id of ['settings', 'diag', 'family', 'studio', 'tbook', 'kids', 'sensors', 'noise', 'speed', 'level', 'light', 'vib', 'wifi', 'bills', 'fuel']) {
+  for (const id of ['settings', 'diag', 'family', 'studio', 'tbook', 'kids', 'sensors', 'noise', 'speed', 'level', 'light', 'vib', 'wifi', 'bills', 'fuel', 'coords']) {
     await p.evaluate(i => { CL.S.back = []; CL.S.view = i; CL.render(); }, id); await p.waitForTimeout(300);
     ok.push(id + ':' + (await p.evaluate(() => document.getElementById('body').innerText.length > 5)));
   }
