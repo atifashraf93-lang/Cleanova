@@ -27,32 +27,69 @@ window.CLifeInit17 = function (CL) {
       '<div style="opacity:.9;margin-top:4px;font-size:13.5px">' + (amt ? '<b style="direction:ltr;display:inline-block">' + amt + '</b> · ' : '') + tt('بل کھولیں ›', 'Open bills ›') + '</div></button>';
   }
 
+
+  /* always-visible bills card (works with or without saved bills) */
+  function billsCard() {
+    var d = CL.billsData ? CL.billsData() : lget('bills', null), items = d && d.items ? d.items : [], legacy = (d && d.legacy) || [], open = items.filter(function (b) { return !b.paid; });
+    var rows = open.map(function (b) { return { b: b, n: dleft(b.due) }; }).sort(function (x, y) { return (x.n === null ? 999 : x.n) - (y.n === null ? 999 : y.n); });
+    var tot = open.reduce(function (a, b) { return a + (b.amt || 0); }, 0), first = rows[0], hot = first && first.n !== null && first.n <= 3;
+    var bg = hot ? 'linear-gradient(135deg,#8a3d10,#d1731f)' : 'linear-gradient(135deg,#0f5e4d,#1f8f78 60%,#2aa6a0)';
+    var h = '<button class="card smbill" id="smbills" style="background:' + bg + '"><div class="smbh"><span class="smbi">🧾</span><b>' + tt('میرے بل', 'My bills') + '</b><span class="smbg">' + tt('کھولیں ›', 'Open ›') + '</span></div>';
+    if (!items.length && !legacy.length) {
+      h += '<div class="smbt" style="font-size:16px;line-height:1.7;font-weight:700">' + tt('بجلی، گیس، پانی کے نمبر ایک بار محفوظ کریں', 'Save your electricity, gas and water numbers once') + '</div><div class="smbs">' + tt('پھر ایک ٹچ میں بل دیکھیں اور آخری تاریخ کی یاد دہانی پائیں', 'Then view the bill in one tap and get due-date reminders') + '</div>';
+    } else {
+      h += '<div class="smbt" style="direction:ltr;text-align:start">' + (tot ? 'Rs. ' + Math.round(tot).toLocaleString('en') : '–') + '<small> ' + tt('باقی', 'unpaid') + '</small></div><div class="smrows">' +
+        (rows.slice(0, 3).map(function (r) {
+          var nm = BN[r.b.co] || [r.b.co || '', '🧾'], w = r.n === null ? '' : r.n < 0 ? tt('گزر گئی', 'overdue') : r.n === 0 ? tt('آج', 'today') : tt(r.n + ' دن', r.n + ' d');
+          return '<span class="smbr">' + nm[1] + ' ' + esc(nm[0]) + (w ? ' · ' + w : '') + '</span>';
+        }).join('') + legacy.slice(0, 2).map(function (b) { return '<span class="smbr">🧾 ' + esc(b.title || '') + '</span>'; }).join('') || '<span class="smbr">✅ ' + tt('سب ادا ہو گئے', 'All paid') + '</span>') + '</div>';
+    }
+    return h + '</button>';
+  }
+
+  /* most used tools: by how often they were opened, then favourites, then sensible defaults */
+  var DEF = ['speed', 'weather', 'fuel', 'qibla', 'coords', 'status', 'calc', 'ai', 'studio', 'tbook'], SKIP = { bills: 1, pks: 1, parcel: 1, bond: 1, tools: 1 } /* bills have their own card */;
+  function topTools(n) {
+    var REG = CL.REG || {}, st = lget('tl.stat', {}), fav = lget('tl.fav', []), out = [], seen = {};
+    function add(id, cnt) { if (!REG[id] || SKIP[id] || seen[id]) return; seen[id] = 1; out.push({ id: id, n: cnt || 0 }); }
+    Object.keys(st).filter(function (k) { return st[k] && st[k].n > 0; }).sort(function (x, y) { return st[y].n - st[x].n || st[y].t - st[x].t; }).slice(0, n).forEach(function (k) { add(k, st[k].n); });
+    fav.forEach(function (k) { add(k, (st[k] && st[k].n) || 0); });
+    DEF.forEach(function (k) { add(k, 0); });
+    Object.keys(REG).forEach(function (k) { add(k, 0); });
+    return out.slice(0, n);
+  }
+  function muTile(x) {
+    var m = CL.REG[x.id], ic = /^[a-z0-9]+$/i.test(m.ic) ? CL.ico(m.ic) : '<span style="font-size:22px;line-height:1">' + m.ic + '</span>', nm = CL.lang === 'en' || (CL.PREF && CL.PREF.lang === 'en') ? m.n[1] : m.n[0];
+    return '<button class="smt" data-smv="' + x.id + '" style="border-color:rgba(var(--c' + m.c + '),.28)"><span class="smi" style="background:linear-gradient(145deg,rgba(var(--c' + m.c + '),.34),rgba(var(--c' + m.c + '),.12));color:rgb(var(--c' + m.c + '))">' + ic + '</span><span class="smn">' + esc(nm) + '</span>' + (x.n > 0 ? '<em class="smc">' + x.n + '×</em>' : '') + '</button>';
+  }
+
   function arrange() {
     var b = $('#body'); if (!b || S.view !== 'life' || !b.querySelector('.lgreet') || document.getElementById('smmore')) return;
-    var q = function (s) { return b.querySelector(s); };
-    var keep = { 'lgreet': 1, 'foot': 1 }, foot = q('.foot');
+    var q = function (s) { return b.querySelector(s); }, foot = q('.foot');
     var hero = q('.lhero'), rems = q('.rems'), news = q('#nwsC'), fuel = q('#fuelc'), spd = q('#spdc'), tsb = q('#tsb'), mg = q('.mg');
-    var secs = [].filter.call(b.children, function (e) { return e.classList.contains('sec'); });
-    var sl = slot(), plan = { m: [rems, fuel, news, hero], d: [fuel, news, rems, hero], e: [hero, rems, fuel, news], n: [rems, hero] }[sl].filter(Boolean);
-    var order = [], used = [];
+    var sl = slot(), order = [], used = [];
     function put(e) { if (e && used.indexOf(e) < 0) { used.push(e); order.push(e); } }
-    var nowHtml = needs(); if (nowHtml) { var g = q('.lgreet'); var tmp = document.createElement('div'); tmp.innerHTML = nowHtml; var nowEl = tmp.firstChild; order.push(nowEl); used.push(nowEl); nowEl.onclick = function () { CL.go('bills'); }; }
-    put(spd); plan.forEach(put);
-    /* quick actions: three favourites and the "all tools" tile */
-    var quick = null;
-    if (mg) {
-      var tiles = [].slice.call(mg.querySelectorAll('.mt')), all = tiles.filter(function (t) { return t.dataset.mv === 'tools'; })[0], pick = tiles.filter(function (t) { return t !== all; }).slice(0, 3);
-      quick = document.createElement('div'); quick.className = 'mg'; quick.id = 'smq'; pick.concat(all ? [all] : []).forEach(function (t) { quick.appendChild(t); });
-      var qt = document.createElement('div'); qt.className = 'sec'; qt.textContent = tt('فوری رسائی', 'QUICK ACCESS'); order.push(qt); order.push(quick); used.push(qt); used.push(quick);
-    }
+    function sec(t, extra) { var d = document.createElement('div'); d.className = 'sec smsec'; d.innerHTML = '<i></i>' + t + (extra || ''); put(d); }
+    if (hero) hero.classList.add('dh');
+    put(hero);
+    var bt = document.createElement('div'); bt.innerHTML = billsCard(); var bEl = bt.firstChild; bEl.onclick = function () { CL.go('bills'); }; put(bEl);
+    /* most used */
+    var tp = topTools(7), used0 = tp.some(function (x) { return x.n > 0; });
+    sec(used0 ? tt('آپ کے سب سے زیادہ استعمال', 'MOST USED BY YOU') : tt('تیز رسائی', 'QUICK ACCESS'));
+    var grid = document.createElement('div'); grid.className = 'smu'; grid.id = 'smq'; grid.innerHTML = tp.map(muTile).join('') + '<button class="smt" data-smv="tools"><span class="smi" style="background:linear-gradient(145deg,rgba(var(--c6),.34),rgba(var(--c6),.12));color:rgb(var(--c6))"><span style="font-size:22px">⠿</span></span><span class="smn">' + tt('تمام ٹولز', 'All tools') + '</span></button>';
+    [].forEach.call(grid.querySelectorAll('[data-smv]'), function (t) { t.onclick = function () { CL.go(t.dataset.smv); }; });
+    put(grid);
     put(tsb);
+    /* live cards */
+    var live = { m: [rems, spd, fuel, news], d: [spd, fuel, news, rems], e: [rems, spd, news, fuel], n: [rems, spd] }[sl].filter(Boolean);
+    if (live.length) { sec(tt('آج کا حال', 'TODAY')); live.forEach(put); }
     var more = document.createElement('div'); more.id = 'smmore'; more.hidden = true;
     var btn = document.createElement('button'); btn.className = 'card'; btn.id = 'smmb'; btn.style.cssText = 'width:100%;text-align:center;margin:12px 0 4px;font-weight:700';
-    btn.textContent = '⌄ ' + tt('سب ٹولز اور مزید', 'All tools & more');
-    btn.onclick = function () { more.hidden = !more.hidden; btn.textContent = (more.hidden ? '⌄ ' : '⌃ ') + tt('سب ٹولز اور مزید', 'All tools & more'); if (!more.hidden) setTimeout(function () { try { more.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { /* ignore */ } }, 50); };
+    btn.textContent = '⌄ ' + tt('مزید', 'More');
+    btn.onclick = function () { more.hidden = !more.hidden; btn.textContent = (more.hidden ? '⌄ ' : '⌃ ') + tt('مزید', 'More'); if (!more.hidden) setTimeout(function () { try { more.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { /* ignore */ } }, 50); };
     [].slice.call(b.children).forEach(function (e) {
       if (used.indexOf(e) >= 0 || e === foot || e === more || e === btn) return;
-      var k = e.classList.contains('lgreet') || e.id === 'updc' || e.id === 'kidsnote' || e.id === 'spdc';
+      var k = e.classList.contains('lgreet') || e.id === 'updc' || e.id === 'kidsnote';
       if (!k) more.appendChild(e);
     });
     order.forEach(function (e) { b.insertBefore(e, foot || null); });

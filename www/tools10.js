@@ -335,7 +335,21 @@ window.CLifeInit15 = function (CL) {
   /* ---------- my utility bills ---------- */
   CL.regTool('bills', '🧾', 4, ['میری بلز', 'My bills'], 'money', ['K-Electric، SSGC، KWSB: نمبر، رقم، آخری تاریخ، یاد دہانی', 'K-Electric, SSGC, KWSB: number, amount, due date, reminders'], 'بل bill بجلی گیس پانی k-electric ke کے الیکٹرک ssgc sui gas سوئی گیس kwsb kwsc water پانی utility', true);
   var BC = { ke: ['K-Electric', '⚡', 'https://www.ke.com.pk/', 'کے الیکٹرک'], ssgc: ['SSGC', '🔥', 'https://www.ssgc.com.pk/', 'سوئی سدرن گیس'], kwsb: ['KWSB', '💧', 'https://www.kwsc.gos.pk/', 'واٹر بورڈ'] };
-  function bdata() { var d = lget('bills', null); if (!d || !d.items) d = { items: [], hist: [] }; return d; }
+  /* older versions saved bills as a plain list (monthly day, paid per month): bring those in so nothing is lost */
+  function migrate(a) {
+    var d = { items: [], hist: [], legacy: [] }, now = new Date(), ym = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+    a.forEach(function (b) {
+      if (!b || typeof b !== 'object') return;
+      var s = ((b.comp || '') + ' ' + (b.title || '') + ' ' + (b.type || '')).toLowerCase(), k = /ssgc|gas|sui/.test(s) ? 'ssgc' : /kwsb|kwsc|water|پانی/.test(s) ? 'kwsb' : /k-?electric|\bke\b|elec|bijli|بجلی/.test(s) ? 'ke' : '';
+      if (!k) { d.legacy.push(b); return; }
+      var day = Math.max(1, Math.min(28, +b.day || 10)), due = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + day).slice(-2);
+      var it = { co: k, num: String(b.ref || '').replace(/[^A-Za-z0-9]/g, ''), due: due }; if (+b.amt) it.amt = +b.amt; if (b.paid && b.paid[ym]) it.paid = true;
+      d.items.push(it);
+    });
+    lset('bills', d); return d;
+  }
+  function bdata() { var d = lget('bills', null); if (Array.isArray(d)) d = migrate(d); if (!d || !d.items) d = { items: [], hist: [] }; return d; }
+  CL.billsData = bdata;
   function bsave(d) { lset('bills', d); remind(d); }
   function dleft(due) { if (!due) return null; var t = new Date(due + 'T00:00:00'); return Math.round((t - new Date(new Date().toDateString())) / 86400000); }
   function remind(d) {

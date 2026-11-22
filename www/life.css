@@ -149,3 +149,37 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .swb.on{border-color:#fff;box-shadow:0 0 0 2px var(--acc)}
 .grab{width:46px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 10px}
 .two>div{min-width:0}.two input[type=date],.two input[type=time]{min-width:0;width:100%}
+
+/* dashboard home */
+.lhero.dh{border-radius:30px;padding:18px;margin-top:12px;background:radial-gradient(120% 90% at 0% 0%,rgba(var(--c1),.30),transparent 60%),radial-gradient(100% 90% at 100% 100%,rgba(var(--c5),.22),transparent 60%),linear-gradient(160deg,var(--card2),var(--card));border-color:rgba(var(--c1),.35);box-shadow:0 20px 50px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.06)}
+.smsec{display:flex;align-items:center;gap:8px;margin:22px 2px 10px;font-size:12.5px;letter-spacing:.9px;color:var(--text);opacity:.85}
+.smsec i{width:4px;height:15px;border-radius:3px;background:linear-gradient(var(--acc),var(--acc2));display:block}
+.smu{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.smt{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;padding:11px 2px 9px;border-radius:20px;background:linear-gradient(170deg,var(--card2),var(--card));border:1px solid var(--line);box-shadow:0 8px 22px rgba(0,0,0,.16);min-height:92px;justify-content:flex-start}
+.smt:active{transform:scale(.96)}
+.smi{width:46px;height:46px;border-radius:16px;display:flex;align-items:center;justify-content:center}
+.smi svg{width:24px;height:24px}
+.smn{font-size:11.5px;line-height:1.35;text-align:center;font-weight:600;max-width:100%;padding:0 4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.smc{position:absolute;top:7px;inset-inline-end:9px;font:700 10px system-ui;font-style:normal;color:var(--mut);direction:ltr}
+#smq+#tsb{margin-top:14px}
+
+.lgreet h2{padding-inline:96px}.lgreet p{padding-inline:0}
+
+/* dashboard polish */
+.smt{background:radial-gradient(90% 70% at 50% 0%,rgba(255,255,255,.07),transparent 70%),linear-gradient(170deg,var(--card2),var(--card))}
+:root[data-theme="light"] .smt{background:linear-gradient(170deg,#fff,var(--card2));box-shadow:0 10px 24px rgba(30,70,120,.12)}
+.smi{width:50px;height:50px;border-radius:17px;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+.lhero.dh .lring{filter:drop-shadow(0 6px 14px rgba(var(--c1),.35))}
+.lhero.dh .lchip{backdrop-filter:blur(6px)}
+.lgreet h2{font-size:28px}
+.smsec{font-size:13px;font-weight:800}
+
+.smbill{display:block;width:100%;text-align:start;margin:12px 0 0;padding:15px 16px;border:0;border-radius:24px;color:#fff;box-shadow:0 14px 30px rgba(15,94,77,.28)}
+.smbh{display:flex;align-items:center;gap:8px;font-size:15px}.smbh b{flex:1;font-weight:800}
+.smbi{width:30px;height:30px;border-radius:10px;background:rgba(255,255,255,.2);display:inline-flex;align-items:center;justify-content:center;font-size:16px}
+.smbg{font-size:12.5px;opacity:.9;font-weight:600}
+.smbt{font:800 26px/1.3 system-ui;margin-top:8px}.smbt small{font-size:13px;font-weight:600;opacity:.85}
+.smbs{font-size:13px;opacity:.88;margin-top:2px}
+body:not(.en) .smbt:not([style]){font:700 16px/1.6 inherit}
+.smrows{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.smbr{background:rgba(255,255,255,.18);border-radius:14px;padding:2px 10px;font-size:12.5px;font-weight:600}
